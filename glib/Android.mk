@@ -7,6 +7,7 @@ LOCAL_SRC_FILES:= \
 	giochannel.c \
 	gkeyfile.c \
 	gmain.c \
+	gmarkup.c \
 	gmem.c \
 	goption.c \
 	gslice.c \
