@@ -35,7 +35,8 @@ LOCAL_SRC_FILES:= \
 	grand.c \
 	gunidecomp.c \
 	gqsort.c \
-	gstdio.c
+	gstdio.c \
+	gqueue.c
 
 LOCAL_C_INCLUDES:= \
 	$(LOCAL_PATH)/../ \
