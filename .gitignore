@@ -1,6 +1,6 @@
 # for all subdirectories
-Makefile.in
-Makefile
+TAGS
+tags
 .libs
 .deps
 *.o
@@ -9,18 +9,21 @@ Makefile
 *.pc
 .*.swp
 .sw?
+*.rc
+*.gcno
+*.gcda
+*.gcov
+*.sourcefiles
+*.stp
+*.exe
+*.def
+*.test
+*.log
+*.trs
 
-# autofoo stuff here
-compile
-configure
-depcomp
-aclocal.m4
-autom4te.cache
-stamp-*
-libtool
-ltmain.sh
-missing
-install-sh
-glib-gettextize
-glib-zip
-gtk-doc.make
+/glib-lcov.info
+/glib-lcov/
+
+# Meson
+/meson-build/
+/subprojects/*/

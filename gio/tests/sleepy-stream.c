@@ -1,10 +1,12 @@
 /*
  * Copyright © 2009 Codethink Limited
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published
- * by the Free Software Foundation; either version 2 of the licence or (at
- * your option) any later version.
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * See the included COPYING file for more information.
  *
@@ -21,7 +23,7 @@ static gchar *
 cook_piece (void)
 {
   char buffer[MAX_PIECE_SIZE * 2];
-  gint symbols, index = 0;
+  gint symbols, i = 0;
 
   symbols = g_test_rand_int_range (1, MAX_PIECE_SIZE + 1);
 
@@ -32,26 +34,28 @@ cook_piece (void)
       switch (c)
         {
          case 26:
-          buffer[index++] = '\n';
+          buffer[i++] = '\n';
+          G_GNUC_FALLTHROUGH;
          case 27:
-          buffer[index++] = '\r';
+          buffer[i++] = '\r';
           break;
 
          case 28:
-          buffer[index++] = '\r';
+          buffer[i++] = '\r';
+          G_GNUC_FALLTHROUGH;
          case 29:
-          buffer[index++] = '\n';
+          buffer[i++] = '\n';
           break;
 
          default:
-          buffer[index++] = c + 'a';
+          buffer[i++] = c + 'a';
           break;
         }
 
-      g_assert_cmpint (index, <=, sizeof buffer);
+      g_assert_cmpint (i, <=, sizeof buffer);
     }
 
-  return g_strndup (buffer, index);
+  return g_strndup (buffer, i);
 }
 
 static gchar **
@@ -83,6 +87,8 @@ typedef struct
 
 typedef GInputStreamClass SleepyStreamClass;
 
+GType sleepy_stream_get_type (void);
+
 G_DEFINE_TYPE (SleepyStream, sleepy_stream, G_TYPE_INPUT_STREAM)
 
 static gssize
@@ -98,7 +104,7 @@ sleepy_stream_read (GInputStream  *stream,
     {
       if (sleepy->built_to_fail)
         {
-          g_set_error (error, 0, 0, "fail");
+          g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED, "fail");
           return -1;
         }
       else
@@ -149,7 +155,7 @@ sleepy_stream_class_init (SleepyStreamClass *class)
    */
 }
 
-SleepyStream *
+static SleepyStream *
 sleepy_stream_new (void)
 {
   return g_object_new (sleepy_stream_get_type (), NULL);
@@ -162,10 +168,7 @@ read_line (GDataInputStream  *stream,
            GError           **error)
 {
   gsize length;
-  int eol_len;
   char *str;
-
-  eol_len = 1 + (eol[1] != '\0');
 
   str = g_data_input_stream_read_line (stream, &length, NULL, error);
 
@@ -197,7 +200,7 @@ build_comparison (GString      *str,
 }
 
 
-void
+static void
 test (void)
 {
   SleepyStream *stream = sleepy_stream_new ();
@@ -259,7 +262,7 @@ asynch_ready (GObject      *object,
 }
 
 
-void
+static void
 asynch (void)
 {
   SleepyStream *sleepy = sleepy_stream_new ();
@@ -284,9 +287,7 @@ int
 main (int argc, char **argv)
 {
   g_test_init (&argc, &argv, NULL);
-  g_test_bug_base ("http://bugzilla.gnome.org/");
 
-  g_type_init ();
   g_test_add_func ("/filter-stream/input", test);
   g_test_add_func ("/filter-stream/async", asynch);
 

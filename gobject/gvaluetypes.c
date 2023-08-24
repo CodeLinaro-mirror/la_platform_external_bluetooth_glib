@@ -1,10 +1,13 @@
 /* GObject - GLib Type, Object, Parameter and Signal Library
  * Copyright (C) 1997-1999, 2000-2001 Tim Janik and Red Hat, Inc.
+ * Copyright © 2010 Christian Persch
+ *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -12,9 +15,7 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General
- * Public License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Public License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -27,12 +28,12 @@
 #include <stdlib.h> /* qsort() */
 
 #include "gvaluetypes.h"
+#include "gtype-private.h"
 #include "gvaluecollector.h"
 #include "gobject.h"
 #include "gparam.h"
 #include "gboxed.h"
 #include "genums.h"
-#include "gobjectalias.h"
 
 
 /* --- value functions --- */
@@ -56,10 +57,9 @@ value_lcopy_char (const GValue *value,
 		  guint         collect_flags)
 {
   gint8 *int8_p = collect_values[0].v_pointer;
-  
-  if (!int8_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
-  
+
+  g_return_val_if_fail (int8_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
   *int8_p = value->data[0].v_int;
   
   return NULL;
@@ -72,10 +72,9 @@ value_lcopy_boolean (const GValue *value,
 		     guint         collect_flags)
 {
   gboolean *bool_p = collect_values[0].v_pointer;
-  
-  if (!bool_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
-  
+
+  g_return_val_if_fail (bool_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
   *bool_p = value->data[0].v_int;
   
   return NULL;
@@ -99,10 +98,9 @@ value_lcopy_int (const GValue *value,
 		 guint         collect_flags)
 {
   gint *int_p = collect_values[0].v_pointer;
-  
-  if (!int_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
-  
+
+  g_return_val_if_fail (int_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
   *int_p = value->data[0].v_int;
   
   return NULL;
@@ -126,10 +124,9 @@ value_lcopy_long (const GValue *value,
 		  guint         collect_flags)
 {
   glong *long_p = collect_values[0].v_pointer;
-  
-  if (!long_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
-  
+
+  g_return_val_if_fail (long_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
   *long_p = value->data[0].v_long;
   
   return NULL;
@@ -166,10 +163,9 @@ value_lcopy_int64 (const GValue *value,
 		   guint         collect_flags)
 {
   gint64 *int64_p = collect_values[0].v_pointer;
-  
-  if (!int64_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
-  
+
+  g_return_val_if_fail (int64_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
   *int64_p = value->data[0].v_int64;
   
   return NULL;
@@ -206,10 +202,9 @@ value_lcopy_float (const GValue *value,
 		   guint         collect_flags)
 {
   gfloat *float_p = collect_values[0].v_pointer;
-  
-  if (!float_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
-  
+
+  g_return_val_if_fail (float_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
   *float_p = value->data[0].v_float;
   
   return NULL;
@@ -246,10 +241,9 @@ value_lcopy_double (const GValue *value,
 		    guint         collect_flags)
 {
   gdouble *double_p = collect_values[0].v_pointer;
-  
-  if (!double_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
-  
+
+  g_return_val_if_fail (double_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
   *double_p = value->data[0].v_double;
   
   return NULL;
@@ -272,7 +266,16 @@ static void
 value_copy_string (const GValue *src_value,
 		   GValue	*dest_value)
 {
-  dest_value->data[0].v_pointer = g_strdup (src_value->data[0].v_pointer);
+  if (src_value->data[1].v_uint & G_VALUE_INTERNED_STRING)
+    {
+      dest_value->data[0].v_pointer = src_value->data[0].v_pointer;
+      dest_value->data[1].v_uint = src_value->data[1].v_uint;
+    }
+  else
+    {
+      dest_value->data[0].v_pointer = g_strdup (src_value->data[0].v_pointer);
+      /* Don't copy over *any* flags, we're restarting from scratch */
+    }
 }
 
 static gchar*
@@ -301,10 +304,9 @@ value_lcopy_string (const GValue *value,
 		    guint         collect_flags)
 {
   gchar **string_p = collect_values[0].v_pointer;
-  
-  if (!string_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
-  
+
+  g_return_val_if_fail (string_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
   if (!value->data[0].v_pointer)
     *string_p = NULL;
   else if (collect_flags & G_VALUE_NOCOPY_CONTENTS)
@@ -353,18 +355,69 @@ value_lcopy_pointer (const GValue *value,
 {
   gpointer *pointer_p = collect_values[0].v_pointer;
 
-  if (!pointer_p)
-    return g_strdup_printf ("value location for `%s' passed as NULL", G_VALUE_TYPE_NAME (value));
+  g_return_val_if_fail (pointer_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
 
   *pointer_p = value->data[0].v_pointer;
 
   return NULL;
 }
 
+static void
+value_free_variant (GValue *value)
+{
+  if (!(value->data[1].v_uint & G_VALUE_NOCOPY_CONTENTS) &&
+      value->data[0].v_pointer)
+    g_variant_unref (value->data[0].v_pointer);
+}
+
+static void
+value_copy_variant (const GValue *src_value,
+		   GValue	*dest_value)
+{
+  if (src_value->data[0].v_pointer)
+    dest_value->data[0].v_pointer = g_variant_ref_sink (src_value->data[0].v_pointer);
+  else
+    dest_value->data[0].v_pointer = NULL;
+}
+
+static gchar*
+value_collect_variant (GValue	  *value,
+		      guint        n_collect_values,
+		      GTypeCValue *collect_values,
+		      guint        collect_flags)
+{
+  if (!collect_values[0].v_pointer)
+    value->data[0].v_pointer = NULL;
+  else
+    /* never honour G_VALUE_NOCOPY_CONTENTS for ref-counted types */
+    value->data[0].v_pointer = g_variant_ref_sink (collect_values[0].v_pointer);
+
+  return NULL;
+}
+
+static gchar*
+value_lcopy_variant (const GValue *value,
+		    guint         n_collect_values,
+		    GTypeCValue  *collect_values,
+		    guint         collect_flags)
+{
+  GVariant **variant_p = collect_values[0].v_pointer;
+
+  g_return_val_if_fail (variant_p != NULL, g_strdup_printf ("value location for '%s' passed as NULL", G_VALUE_TYPE_NAME (value)));
+
+  if (!value->data[0].v_pointer)
+    *variant_p = NULL;
+  else if (collect_flags & G_VALUE_NOCOPY_CONTENTS)
+    *variant_p = value->data[0].v_pointer;
+  else
+    *variant_p = g_variant_ref_sink (value->data[0].v_pointer);
+
+  return NULL;
+}
 
 /* --- type initialization --- */
 void
-g_value_types_init (void)
+_g_value_types_init (void)
 {
   GTypeInfo info = {
     0,				/* class_size */
@@ -379,7 +432,7 @@ g_value_types_init (void)
     NULL,			/* value_table */
   };
   const GTypeFundamentalInfo finfo = { G_TYPE_FLAG_DERIVABLE, };
-  GType type;
+  GType type G_GNUC_UNUSED  /* when compiling with G_DISABLE_ASSERT */;
   
   /* G_TYPE_CHAR / G_TYPE_UCHAR
    */
@@ -550,6 +603,24 @@ g_value_types_init (void)
     type = g_type_register_fundamental (G_TYPE_POINTER, g_intern_static_string ("gpointer"), &info, &finfo, 0);
     g_assert (type == G_TYPE_POINTER);
   }
+
+  /* G_TYPE_VARIANT
+   */
+  {
+    static const GTypeValueTable value_table = {
+      value_init_pointer,	/* value_init */
+      value_free_variant,	/* value_free */
+      value_copy_variant,	/* value_copy */
+      value_peek_pointer0,	/* value_peek_pointer */
+      "p",			/* collect_format */
+      value_collect_variant,	/* collect_value */
+      "p",			/* lcopy_format */
+      value_lcopy_variant,	/* lcopy_value */
+    };
+    info.value_table = &value_table;
+    type = g_type_register_fundamental (G_TYPE_VARIANT, g_intern_static_string ("GVariant"), &info, &finfo, 0);
+    g_assert (type == G_TYPE_VARIANT);
+  }
 }
 
 
@@ -560,6 +631,7 @@ g_value_types_init (void)
  * @v_char: character value to be set
  *
  * Set the contents of a %G_TYPE_CHAR #GValue to @v_char.
+ * Deprecated: 2.32: This function's input type is broken, see g_value_set_schar()
  */
 void
 g_value_set_char (GValue *value,
@@ -574,12 +646,51 @@ g_value_set_char (GValue *value,
  * g_value_get_char:
  * @value: a valid #GValue of type %G_TYPE_CHAR
  *
- * Get the contents of a %G_TYPE_CHAR #GValue.
+ * Do not use this function; it is broken on platforms where the %char
+ * type is unsigned, such as ARM and PowerPC.  See g_value_get_schar().
+ *
+ * Get the contents of a %G_TYPE_CHAR #GValue.  
  * 
  * Returns: character contents of @value
+ * Deprecated: 2.32: This function's return type is broken, see g_value_get_schar()
  */
 gchar
 g_value_get_char (const GValue *value)
+{
+  g_return_val_if_fail (G_VALUE_HOLDS_CHAR (value), 0);
+  
+  return value->data[0].v_int;
+}
+
+/**
+ * g_value_set_schar:
+ * @value: a valid #GValue of type %G_TYPE_CHAR
+ * @v_char: signed 8 bit integer to be set
+ *
+ * Set the contents of a %G_TYPE_CHAR #GValue to @v_char.
+ *
+ * Since: 2.32
+ */
+void
+g_value_set_schar (GValue *value,
+		   gint8   v_char)
+{
+  g_return_if_fail (G_VALUE_HOLDS_CHAR (value));
+  
+  value->data[0].v_int = v_char;
+}
+
+/**
+ * g_value_get_schar:
+ * @value: a valid #GValue of type %G_TYPE_CHAR
+ *
+ * Get the contents of a %G_TYPE_CHAR #GValue.
+ * 
+ * Returns: signed 8 bit integer contents of @value
+ * Since: 2.32
+ */
+gint8
+g_value_get_schar (const GValue *value)
 {
   g_return_val_if_fail (G_VALUE_HOLDS_CHAR (value), 0);
   
@@ -909,9 +1020,9 @@ g_value_get_double (const GValue *value)
 /**
  * g_value_set_string:
  * @value: a valid #GValue of type %G_TYPE_STRING
- * @v_string: caller-owned string to be duplicated for the #GValue
+ * @v_string: (nullable): caller-owned string to be duplicated for the #GValue
  *
- * Set the contents of a %G_TYPE_STRING #GValue to @v_string.
+ * Set the contents of a %G_TYPE_STRING #GValue to a copy of @v_string.
  */
 void
 g_value_set_string (GValue	*value,
@@ -934,11 +1045,14 @@ g_value_set_string (GValue	*value,
 /**
  * g_value_set_static_string:
  * @value: a valid #GValue of type %G_TYPE_STRING
- * @v_string: static string to be set
+ * @v_string: (nullable): static string to be set
  *
  * Set the contents of a %G_TYPE_STRING #GValue to @v_string.
  * The string is assumed to be static, and is thus not duplicated
  * when setting the #GValue.
+ *
+ * If the the string is a canonical string, using g_value_set_interned_string()
+ * is more appropriate.
  */
 void
 g_value_set_static_string (GValue      *value,
@@ -953,9 +1067,32 @@ g_value_set_static_string (GValue      *value,
 }
 
 /**
+ * g_value_set_interned_string:
+ * @value: a valid #GValue of type %G_TYPE_STRING
+ * @v_string: (nullable): static string to be set
+ *
+ * Set the contents of a %G_TYPE_STRING #GValue to @v_string.  The string is
+ * assumed to be static and interned (canonical, for example from
+ * g_intern_string()), and is thus not duplicated when setting the #GValue.
+ *
+ * Since: 2.66
+ */
+void
+g_value_set_interned_string (GValue *value,
+                             const gchar *v_string)
+{
+  g_return_if_fail (G_VALUE_HOLDS_STRING (value));
+
+  if (!(value->data[1].v_uint & G_VALUE_NOCOPY_CONTENTS))
+    g_free (value->data[0].v_pointer);
+  value->data[1].v_uint = G_VALUE_NOCOPY_CONTENTS | G_VALUE_INTERNED_STRING;
+  value->data[0].v_pointer = (gchar *) v_string;
+}
+
+/**
  * g_value_set_string_take_ownership:
  * @value: a valid #GValue of type %G_TYPE_STRING
- * @v_string: duplicated unowned string to be set
+ * @v_string: (nullable): duplicated unowned string to be set
  *
  * This is an internal function introduced mainly for C marshallers.
  *
@@ -971,7 +1108,7 @@ g_value_set_string_take_ownership (GValue *value,
 /**
  * g_value_take_string:
  * @value: a valid #GValue of type %G_TYPE_STRING
- * @v_string: string to take ownership of
+ * @v_string: (nullable) (transfer full): string to take ownership of
  *
  * Sets the contents of a %G_TYPE_STRING #GValue to @v_string.
  *
@@ -996,9 +1133,9 @@ g_value_take_string (GValue *value,
  *
  * Get the contents of a %G_TYPE_STRING #GValue.
  *
- * Returns: string content of @value
+ * Returns: (nullable) (transfer none): string content of @value
  */
-G_CONST_RETURN gchar*
+const gchar*
 g_value_get_string (const GValue *value)
 {
   g_return_val_if_fail (G_VALUE_HOLDS_STRING (value), NULL);
@@ -1012,7 +1149,7 @@ g_value_get_string (const GValue *value)
  *
  * Get a copy the contents of a %G_TYPE_STRING #GValue.
  *
- * Returns: a newly allocated copy of the string content of @value
+ * Returns: (nullable) (transfer full): a newly allocated copy of the string content of @value
  */
 gchar*
 g_value_dup_string (const GValue *value)
@@ -1044,7 +1181,7 @@ g_value_set_pointer (GValue  *value,
  *
  * Get the contents of a pointer #GValue.
  *
- * Returns: pointer contents of @value
+ * Returns: (transfer none): pointer contents of @value
  */
 gpointer
 g_value_get_pointer (const GValue *value)
@@ -1054,15 +1191,7 @@ g_value_get_pointer (const GValue *value)
   return value->data[0].v_pointer;
 }
 
-GType
-g_gtype_get_type (void)
-{
-  static const GTypeInfo type_info = { 0, };
-  static GType type;
-  if (!type)
-    type = g_type_register_static (G_TYPE_POINTER, g_intern_static_string ("GType"), &type_info, 0);
-  return type;
-}
+G_DEFINE_POINTER_TYPE (GType, g_gtype)
 
 /**
  * g_value_set_gtype:
@@ -1079,7 +1208,7 @@ g_value_set_gtype (GValue *value,
 {
   g_return_if_fail (G_VALUE_HOLDS_GTYPE (value));
 
-  value->data[0].v_long = v_gtype;
+  value->data[0].v_pointer = GSIZE_TO_POINTER (v_gtype);
   
 }
 
@@ -1098,7 +1227,119 @@ g_value_get_gtype (const GValue *value)
 {
   g_return_val_if_fail (G_VALUE_HOLDS_GTYPE (value), 0);
 
-  return value->data[0].v_long;
+  return GPOINTER_TO_SIZE (value->data[0].v_pointer);
+}
+
+/**
+ * g_value_set_variant:
+ * @value: a valid #GValue of type %G_TYPE_VARIANT
+ * @variant: (nullable): a #GVariant, or %NULL
+ *
+ * Set the contents of a variant #GValue to @variant.
+ * If the variant is floating, it is consumed.
+ *
+ * Since: 2.26
+ */
+void
+g_value_set_variant (GValue   *value,
+                     GVariant *variant)
+{
+  GVariant *old_variant;
+
+  g_return_if_fail (G_VALUE_HOLDS_VARIANT (value));
+
+  old_variant = value->data[0].v_pointer;
+
+  if (variant)
+    value->data[0].v_pointer = g_variant_ref_sink (variant);
+  else
+    value->data[0].v_pointer = NULL;
+
+  if (old_variant)
+    g_variant_unref (old_variant);
+}
+
+/**
+ * g_value_take_variant:
+ * @value: a valid #GValue of type %G_TYPE_VARIANT
+ * @variant: (nullable) (transfer full): a #GVariant, or %NULL
+ *
+ * Set the contents of a variant #GValue to @variant, and takes over
+ * the ownership of the caller's reference to @variant;
+ * the caller doesn't have to unref it any more (i.e. the reference
+ * count of the variant is not increased).
+ *
+ * If @variant was floating then its floating reference is converted to
+ * a hard reference.
+ *
+ * If you want the #GValue to hold its own reference to @variant, use
+ * g_value_set_variant() instead.
+ *
+ * This is an internal function introduced mainly for C marshallers.
+ *
+ * Since: 2.26
+ */
+void
+g_value_take_variant (GValue   *value,
+                      GVariant *variant)
+{
+  GVariant *old_variant;
+
+  g_return_if_fail (G_VALUE_HOLDS_VARIANT (value));
+
+  old_variant = value->data[0].v_pointer;
+
+  if (variant)
+    value->data[0].v_pointer = g_variant_take_ref (variant);
+  else
+    value->data[0].v_pointer = NULL;
+
+  if (old_variant)
+    g_variant_unref (old_variant);
+}
+
+/**
+ * g_value_get_variant:
+ * @value: a valid #GValue of type %G_TYPE_VARIANT
+ *
+ * Get the contents of a variant #GValue.
+ *
+ * Returns: (transfer none) (nullable): variant contents of @value (may be %NULL)
+ *
+ * Since: 2.26
+ */
+GVariant*
+g_value_get_variant (const GValue *value)
+{
+  g_return_val_if_fail (G_VALUE_HOLDS_VARIANT (value), NULL);
+
+  return value->data[0].v_pointer;
+}
+
+/**
+ * g_value_dup_variant:
+ * @value: a valid #GValue of type %G_TYPE_VARIANT
+ *
+ * Get the contents of a variant #GValue, increasing its refcount. The returned
+ * #GVariant is never floating.
+ *
+ * Returns: (transfer full) (nullable): variant contents of @value (may be %NULL);
+ *    should be unreffed using g_variant_unref() when no longer needed
+ *
+ * Since: 2.26
+ */
+GVariant*
+g_value_dup_variant (const GValue *value)
+{
+  GVariant *variant;
+
+  g_return_val_if_fail (G_VALUE_HOLDS_VARIANT (value), NULL);
+
+  variant = value->data[0].v_pointer;
+  if (variant)
+    g_variant_ref_sink (variant);
+
+  return variant;
 }
 
 /**
@@ -1136,7 +1377,7 @@ g_strdup_value_contents (const GValue *value)
     }
   else if (g_value_type_transformable (G_VALUE_TYPE (value), G_TYPE_STRING))
     {
-      GValue tmp_value = { 0, };
+      GValue tmp_value = G_VALUE_INIT;
       gchar *s;
 
       g_value_init (&tmp_value, G_TYPE_STRING);
@@ -1161,6 +1402,25 @@ g_strdup_value_contents (const GValue *value)
 	contents = g_strdup_printf ("((%s*) %p)", G_OBJECT_TYPE_NAME (p), p);
       else if (G_VALUE_HOLDS_PARAM (value))
 	contents = g_strdup_printf ("((%s*) %p)", G_PARAM_SPEC_TYPE_NAME (p), p);
+      else if (G_VALUE_HOLDS (value, G_TYPE_STRV))
+        {
+          GStrv strv = g_value_get_boxed (value);
+          GString *tmp = g_string_new ("[");
+
+          while (*strv != NULL)
+            {
+              gchar *escaped = g_strescape (*strv, NULL);
+
+              g_string_append_printf (tmp, "\"%s\"", escaped);
+              g_free (escaped);
+
+              if (*++strv != NULL)
+                g_string_append (tmp, ", ");
+            }
+
+          g_string_append (tmp, "]");
+          contents = g_string_free (tmp, FALSE);
+        }
       else if (G_VALUE_HOLDS_BOXED (value))
 	contents = g_strdup_printf ("((%s*) %p)", g_type_name (G_VALUE_TYPE (value)), p);
       else if (G_VALUE_HOLDS_POINTER (value))
@@ -1186,7 +1446,7 @@ g_strdup_value_contents (const GValue *value)
 GType
 g_pointer_type_register_static (const gchar *name)
 {
-  static const GTypeInfo type_info = {
+  const GTypeInfo type_info = {
     0,			/* class_size */
     NULL,		/* base_init */
     NULL,		/* base_finalize */
@@ -1207,6 +1467,3 @@ g_pointer_type_register_static (const gchar *name)
 
   return type;
 }
-
-#define __G_VALUETYPES_C__
-#include "gobjectaliasdef.c"

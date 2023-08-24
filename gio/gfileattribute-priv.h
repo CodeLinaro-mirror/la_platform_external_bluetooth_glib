@@ -2,10 +2,12 @@
  * 
  * Copyright (C) 2006-2007 Red Hat, Inc.
  *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,9 +15,7 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General
- * Public License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Public License along with this library; if not, see <http://www.gnu.org/licenses/>.
  *
  * Author: Alexander Larsson <alexl@redhat.com>
  */
@@ -39,6 +39,7 @@ typedef struct  {
     guint64 uint64;
     char *string;
     GObject *obj;
+    char **stringv;
   } u;
 } GFileAttributeValue;
 
@@ -60,6 +61,7 @@ gint32               _g_file_attribute_value_get_int32       (const GFileAttribu
 guint64              _g_file_attribute_value_get_uint64      (const GFileAttributeValue *attr);
 gint64               _g_file_attribute_value_get_int64       (const GFileAttributeValue *attr);
 GObject *            _g_file_attribute_value_get_object      (const GFileAttributeValue *attr);
+char **              _g_file_attribute_value_get_stringv     (const GFileAttributeValue *attr);
 
 void                 _g_file_attribute_value_set_from_pointer(GFileAttributeValue *attr,
 							      GFileAttributeType   type,
@@ -81,6 +83,8 @@ void                 _g_file_attribute_value_set_int64       (GFileAttributeValu
 							      gint64               value);
 void                 _g_file_attribute_value_set_object      (GFileAttributeValue *attr,
 							      GObject             *obj);
+void                 _g_file_attribute_value_set_stringv     (GFileAttributeValue *attr,
+							      char               **value);
 
 
 GFileAttributeValue *_g_file_info_get_attribute_value (GFileInfo  *info,
