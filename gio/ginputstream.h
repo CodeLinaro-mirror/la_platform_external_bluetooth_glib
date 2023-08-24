@@ -2,10 +2,12 @@
  *
  * Copyright (C) 2006-2007 Red Hat, Inc.
  *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,19 +15,17 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General
- * Public License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Public License along with this library; if not, see <http://www.gnu.org/licenses/>.
  *
  * Author: Alexander Larsson <alexl@redhat.com>
  */
 
+#ifndef __G_INPUT_STREAM_H__
+#define __G_INPUT_STREAM_H__
+
 #if !defined (__GIO_GIO_H_INSIDE__) && !defined (GIO_COMPILATION)
 #error "Only <gio/gio.h> can be included directly."
 #endif
-
-#ifndef __G_INPUT_STREAM_H__
-#define __G_INPUT_STREAM_H__
 
 #include <gio/giotypes.h>
 
@@ -111,26 +111,37 @@ struct _GInputStreamClass
   void (*_g_reserved5) (void);
 };
 
+GIO_AVAILABLE_IN_ALL
 GType    g_input_stream_get_type      (void) G_GNUC_CONST;
 
+GIO_AVAILABLE_IN_ALL
 gssize   g_input_stream_read          (GInputStream          *stream,
 				       void                  *buffer,
 				       gsize                  count,
 				       GCancellable          *cancellable,
 				       GError               **error);
+GIO_AVAILABLE_IN_ALL
 gboolean g_input_stream_read_all      (GInputStream          *stream,
 				       void                  *buffer,
 				       gsize                  count,
 				       gsize                 *bytes_read,
 				       GCancellable          *cancellable,
 				       GError               **error);
+GIO_AVAILABLE_IN_2_34
+GBytes  *g_input_stream_read_bytes    (GInputStream          *stream,
+				       gsize                  count,
+				       GCancellable          *cancellable,
+				       GError               **error);
+GIO_AVAILABLE_IN_ALL
 gssize   g_input_stream_skip          (GInputStream          *stream,
 				       gsize                  count,
 				       GCancellable          *cancellable,
 				       GError               **error);
+GIO_AVAILABLE_IN_ALL
 gboolean g_input_stream_close         (GInputStream          *stream,
 				       GCancellable          *cancellable,
 				       GError               **error);
+GIO_AVAILABLE_IN_ALL
 void     g_input_stream_read_async    (GInputStream          *stream,
 				       void                  *buffer,
 				       gsize                  count,
@@ -138,33 +149,68 @@ void     g_input_stream_read_async    (GInputStream          *stream,
 				       GCancellable          *cancellable,
 				       GAsyncReadyCallback    callback,
 				       gpointer               user_data);
+GIO_AVAILABLE_IN_ALL
 gssize   g_input_stream_read_finish   (GInputStream          *stream,
 				       GAsyncResult          *result,
 				       GError               **error);
+
+GIO_AVAILABLE_IN_2_44
+void     g_input_stream_read_all_async    (GInputStream          *stream,
+                                           void                  *buffer,
+                                           gsize                  count,
+                                           int                    io_priority,
+                                           GCancellable          *cancellable,
+                                           GAsyncReadyCallback    callback,
+                                           gpointer               user_data);
+GIO_AVAILABLE_IN_2_44
+gboolean g_input_stream_read_all_finish   (GInputStream          *stream,
+                                           GAsyncResult          *result,
+                                           gsize                 *bytes_read,
+                                           GError               **error);
+
+GIO_AVAILABLE_IN_2_34
+void     g_input_stream_read_bytes_async  (GInputStream          *stream,
+					   gsize                  count,
+					   int                    io_priority,
+					   GCancellable          *cancellable,
+					   GAsyncReadyCallback    callback,
+					   gpointer               user_data);
+GIO_AVAILABLE_IN_2_34
+GBytes  *g_input_stream_read_bytes_finish (GInputStream          *stream,
+					   GAsyncResult          *result,
+					   GError               **error);
+GIO_AVAILABLE_IN_ALL
 void     g_input_stream_skip_async    (GInputStream          *stream,
 				       gsize                  count,
 				       int                    io_priority,
 				       GCancellable          *cancellable,
 				       GAsyncReadyCallback    callback,
 				       gpointer               user_data);
+GIO_AVAILABLE_IN_ALL
 gssize   g_input_stream_skip_finish   (GInputStream          *stream,
 				       GAsyncResult          *result,
 				       GError               **error);
+GIO_AVAILABLE_IN_ALL
 void     g_input_stream_close_async   (GInputStream          *stream,
 				       int                    io_priority,
 				       GCancellable          *cancellable,
 				       GAsyncReadyCallback    callback,
 				       gpointer               user_data);
+GIO_AVAILABLE_IN_ALL
 gboolean g_input_stream_close_finish  (GInputStream          *stream,
 				       GAsyncResult          *result,
 				       GError               **error);
 
 /* For implementations: */
 
+GIO_AVAILABLE_IN_ALL
 gboolean g_input_stream_is_closed     (GInputStream          *stream);
+GIO_AVAILABLE_IN_ALL
 gboolean g_input_stream_has_pending   (GInputStream          *stream);
+GIO_AVAILABLE_IN_ALL
 gboolean g_input_stream_set_pending   (GInputStream          *stream,
 				       GError               **error);
+GIO_AVAILABLE_IN_ALL
 void     g_input_stream_clear_pending (GInputStream          *stream);
 
 G_END_DECLS

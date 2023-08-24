@@ -4,65 +4,142 @@
  *
  *  Copyright (C) 2003 Sebastian Wilhelmi
  *
- * The Gnome Library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public License as
- * published by the Free Software Foundation; either version 2 of the
- * License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  *
- * The Gnome Library is distributed in the hope that it will be useful,
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with the Gnome Library; see the file COPYING.LIB.  If not,
- * write to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- *   Boston, MA 02111-1307, USA.
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef __G_THREADPRIVATE_H__
 #define __G_THREADPRIVATE_H__
 
-G_BEGIN_DECLS
+#include "config.h"
 
-/* System thread identifier comparision and assignment */
-#if GLIB_SIZEOF_SYSTEM_THREAD == SIZEOF_VOID_P
-# define g_system_thread_equal_simple(thread1, thread2)			\
-   ((thread1).dummy_pointer == (thread2).dummy_pointer)
-# define g_system_thread_assign(dest, src)				\
-   ((dest).dummy_pointer = (src).dummy_pointer)
-#else /* GLIB_SIZEOF_SYSTEM_THREAD != SIZEOF_VOID_P */
-# define g_system_thread_equal_simple(thread1, thread2)			\
-   (memcmp (&(thread1), &(thread2), GLIB_SIZEOF_SYSTEM_THREAD) == 0)
-# define g_system_thread_assign(dest, src)				\
-   (memcpy (&(dest), &(src), GLIB_SIZEOF_SYSTEM_THREAD))
-#endif /* GLIB_SIZEOF_SYSTEM_THREAD == SIZEOF_VOID_P */
+#include "deprecated/gthread.h"
 
-#define g_system_thread_equal(thread1, thread2)				\
-  (g_thread_functions_for_glib_use.thread_equal ? 			\
-   g_thread_functions_for_glib_use.thread_equal (&(thread1), &(thread2)) :\
-   g_system_thread_equal_simple((thread1), (thread2)))
+typedef struct _GRealThread GRealThread;
+struct  _GRealThread
+{
+  GThread thread;
 
-/* Is called from gthread/gthread-impl.c */
-void g_thread_init_glib (void);
+  gint ref_count;
+  gboolean ours;
+  gchar *name;
+  gpointer retval;
+};
 
-/* base initializers, may only use g_mutex_new(), g_cond_new() */
-G_GNUC_INTERNAL void _g_mem_thread_init_noprivate_nomessage (void);
-/* initializers that may also use g_private_new() */
-G_GNUC_INTERNAL void _g_slice_thread_init_nomessage	    (void);
-G_GNUC_INTERNAL void _g_messages_thread_init_nomessage      (void);
+/* system thread implementation (gthread-posix.c, gthread-win32.c) */
 
-/* full fledged initializers */
-G_GNUC_INTERNAL void _g_convert_thread_init (void);
-G_GNUC_INTERNAL void _g_rand_thread_init (void);
-G_GNUC_INTERNAL void _g_main_thread_init (void);
-G_GNUC_INTERNAL void _g_atomic_thread_init (void);
-G_GNUC_INTERNAL void _g_utils_thread_init (void);
+#if defined(HAVE_FUTEX) || defined(HAVE_FUTEX_TIME64)
+#include <errno.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
-#ifdef G_OS_WIN32
-G_GNUC_INTERNAL void _g_win32_thread_init (void);
-#endif /* G_OS_WIN32 */
+#ifndef FUTEX_WAIT_PRIVATE
+#define FUTEX_WAIT_PRIVATE FUTEX_WAIT
+#define FUTEX_WAKE_PRIVATE FUTEX_WAKE
+#endif
 
-G_END_DECLS
+/* Wrapper macro to call `futex_time64` and/or `futex` with simple
+ * parameters and without returning the return value.
+ *
+ * We expect futex to sometimes return EAGAIN due to the race
+ * between the caller checking the current value and deciding to
+ * do the futex op. To avoid splattering errno on success, we
+ * restore the original errno if EAGAIN is seen. See also:
+ *   https://gitlab.gnome.org/GNOME/glib/-/issues/3034
+ *
+ * If the `futex_time64` syscall does not exist (`ENOSYS`), we retry again
+ * with the normal `futex` syscall. This can happen if newer kernel headers
+ * are used than the kernel that is actually running.
+ *
+ * This must not be called with a timeout parameter as that differs
+ * in size between the two syscall variants!
+ */
+#if defined(__NR_futex) && defined(__NR_futex_time64)
+#define g_futex_simple(uaddr, futex_op, ...)                                     \
+  G_STMT_START                                                                   \
+  {                                                                              \
+    int saved_errno = errno;                                                     \
+    int res = syscall (__NR_futex_time64, uaddr, (gsize) futex_op, __VA_ARGS__); \
+    if (res < 0 && errno == ENOSYS)                                              \
+      {                                                                          \
+        errno = saved_errno;                                                     \
+        res = syscall (__NR_futex, uaddr, (gsize) futex_op, __VA_ARGS__);        \
+      }                                                                          \
+    if (res < 0 && errno == EAGAIN)                                              \
+      {                                                                          \
+        errno = saved_errno;                                                     \
+      }                                                                          \
+  }                                                                              \
+  G_STMT_END
+#elif defined(__NR_futex_time64)
+#define g_futex_simple(uaddr, futex_op, ...)                                     \
+  G_STMT_START                                                                   \
+  {                                                                              \
+    int saved_errno = errno;                                                     \
+    int res = syscall (__NR_futex_time64, uaddr, (gsize) futex_op, __VA_ARGS__); \
+    if (res < 0 && errno == EAGAIN)                                              \
+      {                                                                          \
+        errno = saved_errno;                                                     \
+      }                                                                          \
+  }                                                                              \
+  G_STMT_END
+#elif defined(__NR_futex)
+#define g_futex_simple(uaddr, futex_op, ...)                              \
+  G_STMT_START                                                            \
+  {                                                                       \
+    int saved_errno = errno;                                              \
+    int res = syscall (__NR_futex, uaddr, (gsize) futex_op, __VA_ARGS__); \
+    if (res < 0 && errno == EAGAIN)                                       \
+      {                                                                   \
+        errno = saved_errno;                                              \
+      }                                                                   \
+  }                                                                       \
+  G_STMT_END
+#else /* !defined(__NR_futex) && !defined(__NR_futex_time64) */
+#error "Neither __NR_futex nor __NR_futex_time64 are defined but were found by meson"
+#endif /* defined(__NR_futex) && defined(__NR_futex_time64) */
+
+#endif
+
+void            g_system_thread_wait            (GRealThread  *thread);
+
+GRealThread *g_system_thread_new (GThreadFunc proxy,
+                                  gulong stack_size,
+                                  const char *name,
+                                  GThreadFunc func,
+                                  gpointer data,
+                                  GError **error);
+void            g_system_thread_free            (GRealThread  *thread);
+
+void            g_system_thread_exit            (void);
+void            g_system_thread_set_name        (const gchar  *name);
+
+/* gthread.c */
+GThread *g_thread_new_internal (const gchar *name,
+                                GThreadFunc proxy,
+                                GThreadFunc func,
+                                gpointer data,
+                                gsize stack_size,
+                                GError **error);
+
+gpointer        g_thread_proxy                  (gpointer      thread);
+
+guint           g_thread_n_created              (void);
+
+gpointer        g_private_set_alloc0            (GPrivate       *key,
+                                                 gsize           size);
 
 #endif /* __G_THREADPRIVATE_H__ */

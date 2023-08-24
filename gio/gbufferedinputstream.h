@@ -2,10 +2,12 @@
  *
  * Copyright (C) 2006-2007 Red Hat, Inc.
  *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,19 +15,17 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General
- * Public License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Public License along with this library; if not, see <http://www.gnu.org/licenses/>.
  *
  * Author: Christian Kellner <gicmo@gnome.org>
  */
 
+#ifndef __G_BUFFERED_INPUT_STREAM_H__
+#define __G_BUFFERED_INPUT_STREAM_H__
+
 #if !defined (__GIO_GIO_H_INSIDE__) && !defined (GIO_COMPILATION)
 #error "Only <gio/gio.h> can be included directly."
 #endif
-
-#ifndef __G_BUFFERED_INPUT_STREAM_H__
-#define __G_BUFFERED_INPUT_STREAM_H__
 
 #include <gio/gfilterinputstream.h>
 
@@ -84,36 +84,48 @@ struct _GBufferedInputStreamClass
 };
 
 
+GIO_AVAILABLE_IN_ALL
 GType         g_buffered_input_stream_get_type        (void) G_GNUC_CONST;
+GIO_AVAILABLE_IN_ALL
 GInputStream* g_buffered_input_stream_new             (GInputStream          *base_stream);
+GIO_AVAILABLE_IN_ALL
 GInputStream* g_buffered_input_stream_new_sized       (GInputStream          *base_stream,
 						       gsize                  size);
 
+GIO_AVAILABLE_IN_ALL
 gsize         g_buffered_input_stream_get_buffer_size (GBufferedInputStream  *stream);
+GIO_AVAILABLE_IN_ALL
 void          g_buffered_input_stream_set_buffer_size (GBufferedInputStream  *stream,
 						       gsize                  size);
+GIO_AVAILABLE_IN_ALL
 gsize         g_buffered_input_stream_get_available   (GBufferedInputStream  *stream);
+GIO_AVAILABLE_IN_ALL
 gsize         g_buffered_input_stream_peek            (GBufferedInputStream  *stream,
 						       void                  *buffer,
 						       gsize                  offset,
 						       gsize                  count);
+GIO_AVAILABLE_IN_ALL
 const void*   g_buffered_input_stream_peek_buffer     (GBufferedInputStream  *stream,
 						       gsize                 *count);
 
+GIO_AVAILABLE_IN_ALL
 gssize        g_buffered_input_stream_fill            (GBufferedInputStream  *stream,
 						       gssize                 count,
 						       GCancellable          *cancellable,
 						       GError               **error);
+GIO_AVAILABLE_IN_ALL
 void          g_buffered_input_stream_fill_async      (GBufferedInputStream  *stream,
 						       gssize                 count,
 						       int                    io_priority,
 						       GCancellable          *cancellable,
 						       GAsyncReadyCallback    callback,
 						       gpointer               user_data);
+GIO_AVAILABLE_IN_ALL
 gssize        g_buffered_input_stream_fill_finish     (GBufferedInputStream  *stream,
 						       GAsyncResult          *result,
 						       GError               **error);
 
+GIO_AVAILABLE_IN_ALL
 int           g_buffered_input_stream_read_byte       (GBufferedInputStream  *stream,
 						       GCancellable          *cancellable,
 						       GError               **error);

@@ -2,10 +2,12 @@
  * 
  * Copyright (C) 2006-2007 Red Hat, Inc.
  *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,9 +15,7 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General
- * Public License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Public License along with this library; if not, see <http://www.gnu.org/licenses/>.
  *
  * Author: Alexander Larsson <alexl@redhat.com>
  */
@@ -28,10 +28,9 @@
 #include "glibintl.h"
 #include "gloadableicon.h"
 #include "ginputstream.h"
-#include "gsimpleasyncresult.h"
+#include "gtask.h"
 #include "gioerror.h"
 
-#include "gioalias.h"
 
 /**
  * SECTION:gfileicon
@@ -115,13 +114,27 @@ g_file_icon_set_property (GObject      *object,
 }
 
 static void
+g_file_icon_constructed (GObject *object)
+{
+#ifndef G_DISABLE_ASSERT
+  GFileIcon *icon = G_FILE_ICON (object);
+#endif
+
+  G_OBJECT_CLASS (g_file_icon_parent_class)->constructed (object);
+
+  /* Must have be set during construction */
+  g_assert (icon->file != NULL);
+}
+
+static void
 g_file_icon_finalize (GObject *object)
 {
   GFileIcon *icon;
 
   icon = G_FILE_ICON (object);
 
-  g_object_unref (icon->file);
+  if (icon->file)
+    g_object_unref (icon->file);
 
   G_OBJECT_CLASS (g_file_icon_parent_class)->finalize (object);
 }
@@ -134,6 +147,7 @@ g_file_icon_class_init (GFileIconClass *klass)
   gobject_class->get_property = g_file_icon_get_property;
   gobject_class->set_property = g_file_icon_set_property;
   gobject_class->finalize = g_file_icon_finalize;
+  gobject_class->constructed = g_file_icon_constructed;
 
   /**
    * GFileIcon:file:
@@ -142,8 +156,8 @@ g_file_icon_class_init (GFileIconClass *klass)
    */
   g_object_class_install_property (gobject_class, PROP_FILE,
                                    g_param_spec_object ("file",
-                                                        _("file"),
-                                                        _("The file containing the icon"),
+                                                        P_("file"),
+                                                        P_("The file containing the icon"),
                                                         G_TYPE_FILE,
                                                         G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE | G_PARAM_STATIC_NAME | G_PARAM_STATIC_BLURB | G_PARAM_STATIC_NICK));
 }
@@ -159,7 +173,8 @@ g_file_icon_init (GFileIcon *file)
  * 
  * Creates a new icon for a file.
  * 
- * Returns: a #GIcon for the given @file, or %NULL on error.
+ * Returns: (transfer full) (type GFileIcon): a #GIcon for the given
+ *   @file, or %NULL on error.
  **/
 GIcon *
 g_file_icon_new (GFile *file)
@@ -175,7 +190,7 @@ g_file_icon_new (GFile *file)
  * 
  * Gets the #GFile associated with the given @icon.
  * 
- * Returns: a #GFile, or %NULL.
+ * Returns: (transfer none): a #GFile.
  **/
 GFile *
 g_file_icon_get_file (GFileIcon *icon)
@@ -234,7 +249,7 @@ g_file_icon_from_tokens (gchar  **tokens,
       g_set_error (error,
                    G_IO_ERROR,
                    G_IO_ERROR_INVALID_ARGUMENT,
-                   _("Can't handle version %d of GFileIcon encoding"),
+                   _("Can’t handle version %d of GFileIcon encoding"),
                    version);
       goto out;
     }
@@ -256,6 +271,14 @@ g_file_icon_from_tokens (gchar  **tokens,
   return icon;
 }
 
+static GVariant *
+g_file_icon_serialize (GIcon *icon)
+{
+  GFileIcon *file_icon = G_FILE_ICON (icon);
+
+  return g_variant_new ("(sv)", "file", g_variant_new_take_string (g_file_get_uri (file_icon->file)));
+}
+
 static void
 g_file_icon_icon_iface_init (GIconIface *iface)
 {
@@ -263,6 +286,7 @@ g_file_icon_icon_iface_init (GIconIface *iface)
   iface->equal = g_file_icon_equal;
   iface->to_tokens = g_file_icon_to_tokens;
   iface->from_tokens = g_file_icon_from_tokens;
+  iface->serialize = g_file_icon_serialize;
 }
 
 
@@ -279,21 +303,11 @@ g_file_icon_load (GLoadableIcon  *icon,
   stream = g_file_read (file_icon->file,
 			cancellable,
 			error);
+
+  if (stream && type)
+    *type = NULL;
   
   return G_INPUT_STREAM (stream);
-}
-
-typedef struct {
-  GLoadableIcon *icon;
-  GAsyncReadyCallback callback;
-  gpointer user_data;
-} LoadData;
-
-static void
-load_data_free (LoadData *data)
-{
-  g_object_unref (data->icon);
-  g_free (data);
 }
 
 static void
@@ -303,35 +317,14 @@ load_async_callback (GObject      *source_object,
 {
   GFileInputStream *stream;
   GError *error = NULL;
-  GSimpleAsyncResult *simple;
-  LoadData *data = user_data;
+  GTask *task = user_data;
 
   stream = g_file_read_finish (G_FILE (source_object), res, &error);
-  
   if (stream == NULL)
-    {
-      simple = g_simple_async_result_new_from_error (G_OBJECT (data->icon),
-						     data->callback,
-						     data->user_data,
-						     error);
-      g_error_free (error);
-    }
+    g_task_return_error (task, error);
   else
-    {
-      simple = g_simple_async_result_new (G_OBJECT (data->icon),
-					  data->callback,
-					  data->user_data,
-					  g_file_icon_load_async);
-      
-      g_simple_async_result_set_op_res_gpointer (simple,
-						 stream,
-						 g_object_unref);
-  }
-
-
-  g_simple_async_result_complete (simple);
-  
-  load_data_free (data);
+    g_task_return_pointer (task, stream, g_object_unref);
+  g_object_unref (task);
 }
 
 static void
@@ -342,17 +335,14 @@ g_file_icon_load_async (GLoadableIcon       *icon,
                         gpointer             user_data)
 {
   GFileIcon *file_icon = G_FILE_ICON (icon);
-  LoadData *data;
+  GTask *task;
 
-  data = g_new0 (LoadData, 1);
-  data->icon = g_object_ref (icon);
-  data->callback = callback;
-  data->user_data = user_data;
+  task = g_task_new (icon, cancellable, callback, user_data);
+  g_task_set_source_tag (task, g_file_icon_load_async);
   
   g_file_read_async (file_icon->file, 0,
-		     cancellable,
-		     load_async_callback, data);
-  
+                     cancellable,
+                     load_async_callback, task);
 }
 
 static GInputStream *
@@ -361,19 +351,12 @@ g_file_icon_load_finish (GLoadableIcon  *icon,
 			 char          **type,
 			 GError        **error)
 {
-  GSimpleAsyncResult *simple = G_SIMPLE_ASYNC_RESULT (res);
-  gpointer op;
-
-  g_warn_if_fail (g_simple_async_result_get_source_tag (simple) == g_file_icon_load_async);
+  g_return_val_if_fail (g_task_is_valid (res, icon), NULL);
 
   if (type)
     *type = NULL;
   
-  op = g_simple_async_result_get_op_res_gpointer (simple);
-  if (op)
-    return g_object_ref (op);
-  
-  return NULL;
+  return g_task_propagate_pointer (G_TASK (res), error);
 }
 
 static void
@@ -383,6 +366,3 @@ g_file_icon_loadable_icon_iface_init (GLoadableIconIface *iface)
   iface->load_async = g_file_icon_load_async;
   iface->load_finish = g_file_icon_load_finish;
 }
-
-#define __G_FILE_ICON_C__
-#include "gioaliasdef.c"

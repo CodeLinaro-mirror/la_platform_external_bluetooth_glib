@@ -11,7 +11,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,16 +25,16 @@
  */
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#include <config.h>
 #endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 #include <fnmatch.h>
 #include <assert.h>
 
@@ -43,7 +43,7 @@
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
 #else
-#warning Building xdgmime without MMAP support. Binary "mime.info" cache files will not be used.
+#warning Building xdgmime without MMAP support. Binary "mime.cache" files will not be used.
 #endif
 
 #include <sys/stat.h>
@@ -72,12 +72,18 @@
 #define MAP_FAILED ((void *) -1)
 #endif
 
+#ifndef S_ISREG
+#define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+#endif
+
 #define MAJOR_VERSION 1
-#define MINOR_VERSION 1
+#define MINOR_VERSION_MIN 1
+#define MINOR_VERSION_MAX 2
 
 struct _XdgMimeCache
 {
   int ref_count;
+  int minor;
 
   size_t  size;
   char   *buffer;
@@ -116,9 +122,12 @@ _xdg_mime_cache_new_from_file (const char *file_name)
   int fd = -1;
   struct stat st;
   char *buffer = NULL;
+  int minor;
 
   /* Open the file and map it into memory */
-  fd = open (file_name, O_RDONLY|_O_BINARY, 0);
+  do {
+    fd = open (file_name, O_RDONLY|_O_BINARY, 0);
+  } while (fd == -1 && errno == EINTR);
 
   if (fd < 0)
     return NULL;
@@ -131,9 +140,11 @@ _xdg_mime_cache_new_from_file (const char *file_name)
   if (buffer == MAP_FAILED)
     goto done;
 
+  minor = GET_UINT16 (buffer, 2);
   /* Verify version */
   if (GET_UINT16 (buffer, 0) != MAJOR_VERSION ||
-      GET_UINT16 (buffer, 2) != MINOR_VERSION)
+      (minor < MINOR_VERSION_MIN ||
+       minor > MINOR_VERSION_MAX))
     {
       munmap (buffer, st.st_size);
 
@@ -141,6 +152,7 @@ _xdg_mime_cache_new_from_file (const char *file_name)
     }
   
   cache = (XdgMimeCache *) malloc (sizeof (XdgMimeCache));
+  cache->minor = minor;
   cache->ref_count = 1;
   cache->buffer = buffer;
   cache->size = st.st_size;
@@ -149,6 +161,12 @@ _xdg_mime_cache_new_from_file (const char *file_name)
   if (fd != -1)
     close (fd);
 
+#else /* HAVE_MMAP */
+  cache = (XdgMimeCache *) malloc (sizeof (XdgMimeCache));
+  cache->minor = 0;
+  cache->ref_count = 1;
+  cache->buffer = NULL;
+  cache->size = 0;
 #endif  /* HAVE_MMAP */
 
   return cache;
@@ -166,9 +184,9 @@ cache_magic_matchlet_compare_to_data (XdgMimeCache *cache,
   xdg_uint32_t data_offset = GET_UINT32 (cache->buffer, offset + 16);
   xdg_uint32_t mask_offset = GET_UINT32 (cache->buffer, offset + 20);
   
-  int i, j;
+  xdg_uint32_t i, j;
 
-  for (i = range_start; i <= range_start + range_length; i++)
+  for (i = range_start; i < range_start + range_length; i++)
     {
       int valid_matchlet = TRUE;
       
@@ -189,16 +207,9 @@ cache_magic_matchlet_compare_to_data (XdgMimeCache *cache,
 	}
       else
 	{
-	  for (j = 0; j < data_length; j++)
-	    {
-	      if (((unsigned char *)cache->buffer)[data_offset + j] != ((unsigned char *) data)[j + i])
-		{
-		  valid_matchlet = FALSE;
-		  break;
-		}
-	    }
+	  valid_matchlet = memcmp(cache->buffer + data_offset, (unsigned char *)data + i, data_length) == 0;
 	}
-      
+
       if (valid_matchlet)
 	return TRUE;
     }
@@ -215,7 +226,7 @@ cache_magic_matchlet_compare (XdgMimeCache *cache,
   xdg_uint32_t n_children = GET_UINT32 (cache->buffer, offset + 24);
   xdg_uint32_t child_offset = GET_UINT32 (cache->buffer, offset + 28);
 
-  int i;
+  xdg_uint32_t i;
   
   if (cache_magic_matchlet_compare_to_data (cache, offset, data, len))
     {
@@ -245,7 +256,7 @@ cache_magic_compare_to_data (XdgMimeCache *cache,
   xdg_uint32_t n_matchlets = GET_UINT32 (cache->buffer, offset + 8);
   xdg_uint32_t matchlet_offset = GET_UINT32 (cache->buffer, offset + 12);
 
-  int i;
+  xdg_uint32_t i;
 
   for (i = 0; i < n_matchlets; i++)
     {
@@ -265,15 +276,13 @@ static const char *
 cache_magic_lookup_data (XdgMimeCache *cache, 
 			 const void   *data, 
 			 size_t        len, 
-			 int          *prio,
-			 const char   *mime_types[],
-			 int           n_mime_types)
+			 int          *prio)
 {
   xdg_uint32_t list_offset;
   xdg_uint32_t n_entries;
   xdg_uint32_t offset;
 
-  int j, n;
+  xdg_uint32_t j;
 
   *prio = 0;
 
@@ -289,21 +298,6 @@ cache_magic_lookup_data (XdgMimeCache *cache,
 					   data, len, prio);
       if (match)
 	return match;
-      else
-	{
-	  xdg_uint32_t mimetype_offset;
-	  const char *non_match;
-	  
-	  mimetype_offset = GET_UINT32 (cache->buffer, offset + 16 * j + 4);
-	  non_match = cache->buffer + mimetype_offset;
-
-	  for (n = 0; n < n_mime_types; n++)
-	    {
-	      if (mime_types[n] && 
-		  _xdg_mime_mime_type_equal (mime_types[n], non_match))
-		mime_types[n] = NULL;
-	    }
-	}
     }
 
   return NULL;
@@ -318,9 +312,15 @@ cache_alias_lookup (const char *alias)
   for (i = 0; _caches[i]; i++)
     {
       XdgMimeCache *cache = _caches[i];
-      xdg_uint32_t list_offset = GET_UINT32 (cache->buffer, 4);
-      xdg_uint32_t n_entries = GET_UINT32 (cache->buffer, list_offset);
+      xdg_uint32_t list_offset;
+      xdg_uint32_t n_entries;
       xdg_uint32_t offset;
+
+      if (cache->buffer == NULL)
+        continue;
+
+      list_offset = GET_UINT32 (cache->buffer, 4);
+      n_entries = GET_UINT32 (cache->buffer, list_offset);
 
       min = 0; 
       max = n_entries - 1;
@@ -355,7 +355,8 @@ typedef struct {
 static int
 cache_glob_lookup_literal (const char *file_name,
 			   const char *mime_types[],
-			   int         n_mime_types)
+			   int         n_mime_types,
+			   int         case_sensitive_check)
 {
   const char *ptr;
   int i, min, max, mid, cmp;
@@ -363,9 +364,15 @@ cache_glob_lookup_literal (const char *file_name,
   for (i = 0; _caches[i]; i++)
     {
       XdgMimeCache *cache = _caches[i];
-      xdg_uint32_t list_offset = GET_UINT32 (cache->buffer, 12);
-      xdg_uint32_t n_entries = GET_UINT32 (cache->buffer, list_offset);
+      xdg_uint32_t list_offset;
+      xdg_uint32_t n_entries;
       xdg_uint32_t offset;
+
+      if (cache->buffer == NULL)
+        continue;
+
+      list_offset = GET_UINT32 (cache->buffer, 12);
+      n_entries = GET_UINT32 (cache->buffer, list_offset);
 
       min = 0; 
       max = n_entries - 1;
@@ -376,17 +383,25 @@ cache_glob_lookup_literal (const char *file_name,
 	  offset = GET_UINT32 (cache->buffer, list_offset + 4 + 12 * mid);
 	  ptr = cache->buffer + offset;
 	  cmp = strcmp (ptr, file_name);
-	  
+
 	  if (cmp < 0)
 	    min = mid + 1;
 	  else if (cmp > 0)
 	    max = mid - 1;
 	  else
 	    {
-	      offset = GET_UINT32 (cache->buffer, list_offset + 4 + 12 * mid + 4);
-	      mime_types[0] = (const char *)(cache->buffer + offset);
-	      
-	      return 1;
+	      int weight = GET_UINT32 (cache->buffer, list_offset + 4 + 12 * mid + 8);
+	      int case_sensitive = weight & 0x100;
+	      weight = weight & 0xff;
+
+	      if (case_sensitive_check || !case_sensitive)
+		{
+		  offset = GET_UINT32 (cache->buffer, list_offset + 4 + 12 * mid + 4);
+		  mime_types[0] = (const char *)(cache->buffer + offset);
+
+		  return 1;
+		}
+	      return 0;
 	    }
 	}
     }
@@ -397,43 +412,55 @@ cache_glob_lookup_literal (const char *file_name,
 static int
 cache_glob_lookup_fnmatch (const char *file_name,
 			   MimeWeight  mime_types[],
-			   int         n_mime_types)
+			   int         n_mime_types,
+			   int         case_sensitive_check)
 {
   const char *mime_type;
   const char *ptr;
 
-  int i, j, n;
+  int i, n;
+  xdg_uint32_t j;
 
   n = 0;
   for (i = 0; _caches[i]; i++)
     {
       XdgMimeCache *cache = _caches[i];
 
-      xdg_uint32_t list_offset = GET_UINT32 (cache->buffer, 20);
-      xdg_uint32_t n_entries = GET_UINT32 (cache->buffer, list_offset);
+      xdg_uint32_t list_offset;
+      xdg_uint32_t n_entries;
+
+      if (cache->buffer == NULL)
+        continue;
+
+      list_offset = GET_UINT32 (cache->buffer, 20);
+      n_entries = GET_UINT32 (cache->buffer, list_offset);
 
       for (j = 0; j < n_entries && n < n_mime_types; j++)
 	{
 	  xdg_uint32_t offset = GET_UINT32 (cache->buffer, list_offset + 4 + 12 * j);
 	  xdg_uint32_t mimetype_offset = GET_UINT32 (cache->buffer, list_offset + 4 + 12 * j + 4);
 	  int weight = GET_UINT32 (cache->buffer, list_offset + 4 + 12 * j + 8);
+	  int case_sensitive = weight & 0x100;
+	  weight = weight & 0xff;
 	  ptr = cache->buffer + offset;
 	  mime_type = cache->buffer + mimetype_offset;
-
-	  /* FIXME: Not UTF-8 safe */
-	  if (fnmatch (ptr, file_name, 0) == 0)
+	  if (case_sensitive_check || !case_sensitive)
 	    {
-	      mime_types[n].mime = mime_type;
-	      mime_types[n].weight = weight;
-	      n++;
+	      /* FIXME: Not UTF-8 safe */
+	      if (fnmatch (ptr, file_name, 0) == 0)
+	        {
+	          mime_types[n].mime = mime_type;
+	          mime_types[n].weight = weight;
+	          n++;
+	        }
 	    }
 	}
 
-      if (n > 0)
-	return n;
+      if (n == n_mime_types)
+	break;
     }
-  
-  return 0;
+
+  return n;
 }
 
 static int
@@ -442,7 +469,7 @@ cache_glob_node_lookup_suffix (XdgMimeCache  *cache,
 			       xdg_uint32_t   offset,
 			       const char    *file_name,
 			       int            len,
-			       int            ignore_case,
+			       int            case_sensitive_check,
 			       MimeWeight     mime_types[],
 			       int            n_mime_types)
 {
@@ -452,12 +479,12 @@ cache_glob_node_lookup_suffix (XdgMimeCache  *cache,
   xdg_uint32_t n_children;
   xdg_uint32_t child_offset; 
   int weight;
+  int case_sensitive;
 
-  int min, max, mid, n, i;
+  xdg_uint32_t i;
+  int min, max, mid, n;
 
   character = file_name[len - 1];
-  if (ignore_case)
-    character = tolower (character);
 
   assert (character != 0);
 
@@ -483,7 +510,7 @@ cache_glob_node_lookup_suffix (XdgMimeCache  *cache,
               n = cache_glob_node_lookup_suffix (cache, 
                                                  n_children, child_offset,
                                                  file_name, len, 
-                                                 ignore_case,
+                                                 case_sensitive_check,
                                                  mime_types,
                                                  n_mime_types);
             }
@@ -498,10 +525,15 @@ cache_glob_node_lookup_suffix (XdgMimeCache  *cache,
 
 		  mimetype_offset = GET_UINT32 (cache->buffer, child_offset + 12 * i + 4);
 		  weight = GET_UINT32 (cache->buffer, child_offset + 12 * i + 8);
+		  case_sensitive = weight & 0x100;
+		  weight = weight & 0xff;
 
-		  mime_types[n].mime = cache->buffer + mimetype_offset;
-		  mime_types[n].weight = weight;
-		  n++;
+		  if (case_sensitive_check || !case_sensitive)
+		    {
+		      mime_types[n].mime = cache->buffer + mimetype_offset;
+		      mime_types[n].weight = weight;
+		      n++;
+		    }
 		  i++;
 		}
 	    }
@@ -520,25 +552,33 @@ cache_glob_lookup_suffix (const char *file_name,
 {
   int i, n;
 
+  n = 0;
   for (i = 0; _caches[i]; i++)
     {
       XdgMimeCache *cache = _caches[i];
 
-      xdg_uint32_t list_offset = GET_UINT32 (cache->buffer, 16);
-      xdg_uint32_t n_entries = GET_UINT32 (cache->buffer, list_offset);
-      xdg_uint32_t offset = GET_UINT32 (cache->buffer, list_offset + 4);
+      xdg_uint32_t list_offset;
+      xdg_uint32_t n_entries;
+      xdg_uint32_t offset;
 
-      n = cache_glob_node_lookup_suffix (cache, 
-					 n_entries, offset, 
-					 file_name, len,
-					 ignore_case,
-					 mime_types,
-					 n_mime_types);
-      if (n > 0)
-	return n;
+      if (cache->buffer == NULL)
+        continue;
+
+      list_offset = GET_UINT32 (cache->buffer, 16);
+      n_entries = GET_UINT32 (cache->buffer, list_offset);
+      offset = GET_UINT32 (cache->buffer, list_offset + 4);
+
+      n += cache_glob_node_lookup_suffix (cache,
+					  n_entries, offset,
+					  file_name, len,
+					  ignore_case,
+					  mime_types + n,
+					  n_mime_types - n);
+      if (n == n_mime_types)
+	break;
     }
 
-  return 0;
+  return n;
 }
 
 static int compare_mime_weight (const void *a, const void *b)
@@ -546,11 +586,55 @@ static int compare_mime_weight (const void *a, const void *b)
   const MimeWeight *aa = (const MimeWeight *)a;
   const MimeWeight *bb = (const MimeWeight *)b;
 
-  return aa->weight - bb->weight;
+  return bb->weight - aa->weight;
+}
+
+#define ISUPPER(c)		((c) >= 'A' && (c) <= 'Z')
+static char *
+ascii_tolower (const char *str)
+{
+  char *p, *lower;
+
+  lower = strdup (str);
+  p = lower;
+  while (*p != 0)
+    {
+      char c = *p;
+      *p++ = ISUPPER (c) ? c - 'A' + 'a' : c;
+    }
+  return lower;
 }
 
 static int
-cache_glob_lookup_file_name (const char *file_name, 
+filter_out_dupes (MimeWeight mimes[], int n_mimes)
+{
+  int last;
+  int i, j;
+
+  last = n_mimes;
+
+  for (i = 0; i < last; i++)
+    {
+      j = i + 1;
+      while (j < last)
+        {
+          if (strcmp (mimes[i].mime, mimes[j].mime) == 0)
+            {
+              mimes[i].weight = MAX (mimes[i].weight, mimes[j].weight);
+              last--;
+              mimes[j].mime = mimes[last].mime;
+              mimes[j].weight = mimes[last].weight;
+            }
+          else
+            j++;
+        }
+    }
+
+  return last;
+}
+
+static int
+cache_glob_lookup_file_name (const char *file_name,
 			     const char *mime_types[],
 			     int         n_mime_types)
 {
@@ -559,23 +643,42 @@ cache_glob_lookup_file_name (const char *file_name,
   int n_mimes = 10;
   int i;
   int len;
-  
+  char *lower_case;
+
   assert (file_name != NULL && n_mime_types > 0);
 
   /* First, check the literals */
-  n = cache_glob_lookup_literal (file_name, mime_types, n_mime_types);
+
+  lower_case = ascii_tolower (file_name);
+
+  n = cache_glob_lookup_literal (lower_case, mime_types, n_mime_types, FALSE);
   if (n > 0)
-    return n;
+    {
+      free (lower_case);
+      return n;
+    }
+
+  n = cache_glob_lookup_literal (file_name, mime_types, n_mime_types, TRUE);
+  if (n > 0)
+    {
+      free (lower_case);
+      return n;
+    }
 
   len = strlen (file_name);
-  n = cache_glob_lookup_suffix (file_name, len, FALSE, mimes, n_mimes);
+  n = cache_glob_lookup_suffix (lower_case, len, FALSE, mimes, n_mimes);
+  if (n < 2)
+    n += cache_glob_lookup_suffix (file_name, len, TRUE, mimes + n, n_mimes - n);
 
-  if (n == 0)
-    n = cache_glob_lookup_suffix (file_name, len, TRUE, mimes, n_mimes);
-  
   /* Last, try fnmatch */
   if (n == 0)
-    n = cache_glob_lookup_fnmatch (file_name, mimes, n_mimes);
+    n = cache_glob_lookup_fnmatch (lower_case, mimes, n_mimes, FALSE);
+  if (n < 2)
+    n += cache_glob_lookup_fnmatch (file_name, mimes + n, n_mimes - n, TRUE);
+
+  n = filter_out_dupes (mimes, n);
+
+  free (lower_case);
 
   qsort (mimes, n, sizeof (MimeWeight), compare_mime_weight);
 
@@ -599,6 +702,9 @@ _xdg_mime_cache_get_max_buffer_extents (void)
   for (i = 0; _caches[i]; i++)
     {
       XdgMimeCache *cache = _caches[i];
+
+      if (cache->buffer == NULL)
+        continue;
 
       offset = GET_UINT32 (cache->buffer, 24);
       max_extent = MAX (max_extent, GET_UINT32 (cache->buffer, offset + 4));
@@ -626,8 +732,10 @@ cache_get_mime_type_for_data (const void *data,
       int prio;
       const char *match;
 
-      match = cache_magic_lookup_data (cache, data, len, &prio, 
-				       mime_types, n_mime_types);
+      if (cache->buffer == NULL)
+        continue;
+
+      match = cache_magic_lookup_data (cache, data, len, &prio);
       if (prio > priority)
 	{
 	  priority = prio;
@@ -637,18 +745,30 @@ cache_get_mime_type_for_data (const void *data,
 
   if (result_prio)
     *result_prio = priority;
-  
-  if (priority > 0)
-    return mime_type;
 
-  for (n = 0; n < n_mime_types; n++)
+  if (priority > 0)
     {
-      
-      if (mime_types[n])
-	return mime_types[n];
+      /* Pick glob-result R where mime_type inherits from R */
+      for (n = 0; n < n_mime_types; n++)
+        {
+          if (mime_types[n] && _xdg_mime_cache_mime_type_subclass(mime_types[n], mime_type))
+              return mime_types[n];
+        }
+      if (n == 0)
+        {
+          /* No globs: return magic match */
+          return mime_type;
+        }
     }
 
-  return XDG_MIME_TYPE_UNKNOWN;
+  /* Pick first glob result, as fallback */
+  for (n = 0; n < n_mime_types; n++)
+    {
+      if (mime_types[n])
+        return mime_types[n];
+    }
+
+  return NULL;
 }
 
 const char *
@@ -693,6 +813,9 @@ _xdg_mime_cache_get_mime_type_for_file (const char  *file_name,
       statbuf = &buf;
     }
 
+  if (statbuf->st_size == 0)
+    return XDG_MIME_TYPE_EMPTY;
+
   if (!S_ISREG (statbuf->st_mode))
     return XDG_MIME_TYPE_UNKNOWN;
 
@@ -722,6 +845,9 @@ _xdg_mime_cache_get_mime_type_for_file (const char  *file_name,
   mime_type = cache_get_mime_type_for_data (data, bytes_read, NULL,
 					    mime_types, n);
 
+  if (!mime_type)
+    mime_type = _xdg_binary_or_text_fallback (data, bytes_read);
+
   free (data);
   fclose (file);
 
@@ -749,18 +875,27 @@ _xdg_mime_cache_get_mime_types_from_file_name (const char *file_name,
 
 #if 1
 static int
-is_super_type (const char *mime)
+ends_with (const char *str,
+           const char *suffix)
 {
   int length;
-  const char *type;
+  int suffix_length;
 
-  length = strlen (mime);
-  type = &(mime[length - 2]);
+  length = strlen (str);
+  suffix_length = strlen (suffix);
+  if (length < suffix_length)
+    return 0;
 
-  if (strcmp (type, "/*") == 0)
+  if (strcmp (str + length - suffix_length, suffix) == 0)
     return 1;
 
   return 0;
+}
+
+static int
+is_super_type (const char *mime)
+{
+  return ends_with (mime, "/*");
 }
 #endif
 
@@ -770,7 +905,8 @@ _xdg_mime_cache_mime_type_subclass (const char *mime,
 {
   const char *umime, *ubase;
 
-  int i, j, min, max, med, cmp;
+  xdg_uint32_t j;
+  int i, min, max, med, cmp;
   
   umime = _xdg_mime_cache_unalias_mime_type (mime);
   ubase = _xdg_mime_cache_unalias_mime_type (base);
@@ -793,16 +929,22 @@ _xdg_mime_cache_mime_type_subclass (const char *mime,
       strncmp (umime, "text/", 5) == 0)
     return 1;
 
-  if (strcmp (ubase, "application/octet-stream") == 0)
+  if (strcmp (ubase, "application/octet-stream") == 0 &&
+      strncmp (umime, "inode/", 6) != 0)
     return 1;
  
   for (i = 0; _caches[i]; i++)
     {
       XdgMimeCache *cache = _caches[i];
-      
-      xdg_uint32_t list_offset = GET_UINT32 (cache->buffer, 8);
-      xdg_uint32_t n_entries = GET_UINT32 (cache->buffer, list_offset);
+      xdg_uint32_t list_offset;
+      xdg_uint32_t n_entries;
       xdg_uint32_t offset, n_parents, parent_offset;
+
+      if (cache->buffer == NULL)
+        continue;
+
+      list_offset = GET_UINT32 (cache->buffer, 8);
+      n_entries = GET_UINT32 (cache->buffer, list_offset);
 
       min = 0; 
       max = n_entries - 1;
@@ -824,7 +966,9 @@ _xdg_mime_cache_mime_type_subclass (const char *mime,
 	      for (j = 0; j < n_parents; j++)
 		{
 		  parent_offset = GET_UINT32 (cache->buffer, offset + 4 + 4 * j);
-		  if (_xdg_mime_cache_mime_type_subclass (cache->buffer + parent_offset, ubase))
+		  if (strcmp (cache->buffer + parent_offset, mime) != 0 &&
+		      strcmp (cache->buffer + parent_offset, umime) != 0 &&
+		      _xdg_mime_cache_mime_type_subclass (cache->buffer + parent_offset, ubase))
 		    return 1;
 		}
 
@@ -852,7 +996,8 @@ _xdg_mime_cache_unalias_mime_type (const char *mime)
 char **
 _xdg_mime_cache_list_mime_parents (const char *mime)
 {
-  int i, j, k, l, p;
+  int i, l, p;
+  xdg_uint32_t j, k;
   char *all_parents[128]; /* we'll stop at 128 */ 
   char **result;
 
@@ -862,9 +1007,14 @@ _xdg_mime_cache_list_mime_parents (const char *mime)
   for (i = 0; _caches[i]; i++)
     {
       XdgMimeCache *cache = _caches[i];
-  
-      xdg_uint32_t list_offset = GET_UINT32 (cache->buffer, 8);
-      xdg_uint32_t n_entries = GET_UINT32 (cache->buffer, list_offset);
+      xdg_uint32_t list_offset;
+      xdg_uint32_t n_entries;
+
+      if (cache->buffer == NULL)
+        continue;
+
+      list_offset = GET_UINT32 (cache->buffer, 8);
+      n_entries = GET_UINT32 (cache->buffer, list_offset);
 
       for (j = 0; j < n_entries; j++)
 	{
@@ -914,9 +1064,15 @@ cache_lookup_icon (const char *mime, int header)
   for (i = 0; _caches[i]; i++)
     {
       XdgMimeCache *cache = _caches[i];
-      xdg_uint32_t list_offset = GET_UINT32 (cache->buffer, header);
-      xdg_uint32_t n_entries = GET_UINT32 (cache->buffer, list_offset);
+      xdg_uint32_t list_offset;
+      xdg_uint32_t n_entries;
       xdg_uint32_t offset;
+
+      if (cache->buffer == NULL)
+        continue;
+
+      list_offset = GET_UINT32 (cache->buffer, header);
+      n_entries = GET_UINT32 (cache->buffer, list_offset);
 
       min = 0; 
       max = n_entries - 1;
@@ -964,6 +1120,7 @@ dump_glob_node (XdgMimeCache *cache,
   xdg_uint32_t mime_offset;
   xdg_uint32_t n_children;
   xdg_uint32_t child_offset;
+  xdg_uint32_t k;
   int i;
 
   character = GET_UINT32 (cache->buffer, offset);
@@ -978,21 +1135,25 @@ dump_glob_node (XdgMimeCache *cache,
   printf ("\n");
   if (child_offset)
   {
-    for (i = 0; i < n_children; i++)
-      dump_glob_node (cache, child_offset + 20 * i, depth + 1);
+    for (k = 0; k < n_children; k++)
+      dump_glob_node (cache, child_offset + 20 * k, depth + 1);
   }
 }
 
 void
 _xdg_mime_cache_glob_dump (void)
 {
-  int i, j;
+  xdg_uint32_t i, j;
   for (i = 0; _caches[i]; i++)
   {
     XdgMimeCache *cache = _caches[i];
     xdg_uint32_t list_offset;
     xdg_uint32_t n_entries;
     xdg_uint32_t offset;
+
+      if (cache->buffer == NULL)
+        continue;
+
     list_offset = GET_UINT32 (cache->buffer, 16);
     n_entries = GET_UINT32 (cache->buffer, list_offset);
     offset = GET_UINT32 (cache->buffer, list_offset + 4);

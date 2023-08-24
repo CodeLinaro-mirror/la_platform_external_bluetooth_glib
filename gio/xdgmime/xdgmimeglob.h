@@ -12,7 +12,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -51,7 +51,8 @@ typedef enum
 #endif
 
 void         _xdg_mime_glob_read_from_file   (XdgGlobHash *glob_hash,
-					      const char  *file_name);
+					      const char  *file_name,
+					      int          version_two);
 XdgGlobHash *_xdg_glob_hash_new              (void);
 void         _xdg_glob_hash_free             (XdgGlobHash *glob_hash);
 int          _xdg_glob_hash_lookup_file_name (XdgGlobHash *glob_hash,
@@ -61,7 +62,8 @@ int          _xdg_glob_hash_lookup_file_name (XdgGlobHash *glob_hash,
 void         _xdg_glob_hash_append_glob      (XdgGlobHash *glob_hash,
 					      const char  *glob,
 					      const char  *mime_type,
-					      int          weight);
+					      int          weight,
+					      int          case_sensitive);
 XdgGlobType  _xdg_glob_determine_type        (const char  *glob);
 void         _xdg_glob_hash_dump             (XdgGlobHash *glob_hash);
 

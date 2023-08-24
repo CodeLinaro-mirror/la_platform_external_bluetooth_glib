@@ -12,7 +12,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,7 +26,7 @@
  */
 
 #ifdef HAVE_CONFIG_H
-#include "config.h"
+#include <config.h>
 #endif
 
 #include "xdgmimeparent.h"
@@ -111,6 +111,7 @@ _xdg_mime_parent_list_lookup (XdgParentList *list,
     {
       key.mime = (char *)mime;
       key.parents = NULL;
+      key.n_parents = 0;
 
       entry = bsearch (&key, list->parents, list->n_mimes,
 		       sizeof (XdgMimeParents), &parent_entry_cmp);

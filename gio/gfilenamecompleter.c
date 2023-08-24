@@ -2,10 +2,12 @@
  * 
  * Copyright (C) 2006-2007 Red Hat, Inc.
  *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,9 +15,7 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General
- * Public License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place, Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Public License along with this library; if not, see <http://www.gnu.org/licenses/>.
  *
  * Author: Alexander Larsson <alexl@redhat.com>
  */
@@ -30,7 +30,6 @@
 #include <string.h>
 #include "glibintl.h"
 
-#include "gioalias.h"
 
 /**
  * SECTION:gfilenamecompleter
@@ -65,13 +64,13 @@ struct _GFilenameCompleter {
 
   GFile *basenames_dir;
   gboolean basenames_are_escaped;
-  GList *basenames;
   gboolean dirs_only;
+  GList *basenames;
 
   LoadBasenamesData *basename_loader;
 };
 
-G_DEFINE_TYPE (GFilenameCompleter, g_filename_completer, G_TYPE_OBJECT);
+G_DEFINE_TYPE (GFilenameCompleter, g_filename_completer, G_TYPE_OBJECT)
 
 static void cancel_load_basenames (GFilenameCompleter *completer);
 
@@ -87,8 +86,7 @@ g_filename_completer_finalize (GObject *object)
   if (completer->basenames_dir)
     g_object_unref (completer->basenames_dir);
 
-  g_list_foreach (completer->basenames, (GFunc)g_free, NULL);
-  g_list_free (completer->basenames);
+  g_list_free_full (completer->basenames, g_free);
 
   G_OBJECT_CLASS (g_filename_completer_parent_class)->finalize (object);
 }
@@ -109,7 +107,7 @@ g_filename_completer_class_init (GFilenameCompleterClass *klass)
 					  G_SIGNAL_RUN_LAST,
 					  G_STRUCT_OFFSET (GFilenameCompleterClass, got_completion_data),
 					  NULL, NULL,
-					  g_cclosure_marshal_VOID__VOID,
+					  NULL,
 					  G_TYPE_NONE, 0);
 }
 
@@ -156,8 +154,7 @@ load_basenames_data_free (LoadBasenamesData *data)
   g_object_unref (data->cancellable);
   g_object_unref (data->dir);
   
-  g_list_foreach (data->basenames, (GFunc)g_free, NULL);
-  g_list_free (data->basenames);
+  g_list_free_full (data->basenames, g_free);
   
   g_free (data);
 }
@@ -244,8 +241,7 @@ got_more_files (GObject *source_object,
       
       if (data->completer->basenames_dir)
 	g_object_unref (data->completer->basenames_dir);
-      g_list_foreach (data->completer->basenames, (GFunc)g_free, NULL);
-      g_list_free (data->completer->basenames);
+      g_list_free_full (data->completer->basenames, g_free);
       
       data->completer->basenames_dir = g_object_ref (data->dir);
       data->completer->basenames = data->basenames;
@@ -282,10 +278,9 @@ got_enum (GObject *source_object,
 
       if (data->completer->basenames_dir)
 	g_object_unref (data->completer->basenames_dir);
-      g_list_foreach (data->completer->basenames, (GFunc)g_free, NULL);
-      g_list_free (data->completer->basenames);
+      g_list_free_full (data->completer->basenames, g_free);
 
-      /* Mark uptodate with no basenames */
+      /* Mark up-to-date with no basenames */
       data->completer->basenames_dir = g_object_ref (data->dir);
       data->completer->basenames = NULL;
       data->completer->basenames_are_escaped = data->should_escape;
@@ -411,9 +406,9 @@ init_completion (GFilenameCompleter *completer,
  *
  * Obtains a completion for @initial_text from @completer.
  *  
- * Returns: a completed string, or %NULL if no completion exists. 
- *     This string is not owned by GIO, so remember to g_free() it 
- *     when finished.
+ * Returns: (nullable) (transfer full): a completed string, or %NULL if no
+ *     completion exists. This string is not owned by GIO, so remember to g_free()
+ *     it when finished.
  **/
 char *
 g_filename_completer_get_completion_suffix (GFilenameCompleter *completer,
@@ -465,12 +460,12 @@ g_filename_completer_get_completion_suffix (GFilenameCompleter *completer,
  * 
  * Gets an array of completion strings for a given initial text.
  * 
- * Returns: array of strings with possible completions for @initial_text.
+ * Returns: (array zero-terminated=1) (transfer full): array of strings with possible completions for @initial_text.
  * This array must be freed by g_strfreev() when finished. 
  **/
 char **
 g_filename_completer_get_completions (GFilenameCompleter *completer,
-				      const char *initial_text)
+				      const char         *initial_text)
 {
   GList *possible_matches, *l;
   char *prefix;
@@ -486,14 +481,16 @@ g_filename_completer_get_completions (GFilenameCompleter *completer,
   for (l = possible_matches; l != NULL; l = l->next)
     {
       possible_match = l->data;
-      
+
       if (g_str_has_prefix (possible_match, prefix))
 	g_ptr_array_add (res,
 			 g_strconcat (initial_text, possible_match + strlen (prefix), NULL));
     }
 
   g_free (prefix);
-  
+
+  g_ptr_array_add (res, NULL);
+
   return (char**)g_ptr_array_free (res, FALSE);
 }
 
@@ -513,6 +510,3 @@ g_filename_completer_set_dirs_only (GFilenameCompleter *completer,
 
   completer->dirs_only = dirs_only;
 }
-
-#define __G_FILENAME_COMPLETER_C__
-#include "gioaliasdef.c"

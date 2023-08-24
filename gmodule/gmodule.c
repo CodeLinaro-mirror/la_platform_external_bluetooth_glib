@@ -1,10 +1,12 @@
 /* GMODULE - GLIB wrapper code for dynamic module loading
  * Copyright (C) 1998 Tim Janik
  *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * version 2.1 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -12,9 +14,7 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- * Boston, MA 02111-1307, USA.
+ * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
@@ -38,21 +38,181 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#ifdef HAVE_UNISTD_H
+#ifdef G_OS_UNIX
 #include <unistd.h>
 #endif
 #ifdef G_OS_WIN32
 #include <io.h>		/* For open() and close() prototypes. */
 #endif
 
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
+#endif
+
 #include "gmoduleconf.h"
 #include "gstdio.h"
 
+/**
+ * SECTION:modules
+ * @title: Dynamic Loading of Modules
+ * @short_description: portable method for dynamically loading 'plug-ins'
+ *
+ * These functions provide a portable way to dynamically load object files
+ * (commonly known as 'plug-ins'). The current implementation supports all
+ * systems that provide an implementation of dlopen() (e.g. Linux/Sun), as
+ * well as Windows platforms via DLLs.
+ *
+ * A program which wants to use these functions must be linked to the
+ * libraries output by the command `pkg-config --libs gmodule-2.0`.
+ *
+ * To use them you must first determine whether dynamic loading
+ * is supported on the platform by calling g_module_supported().
+ * If it is, you can open a module with g_module_open(),
+ * find the module's symbols (e.g. function names) with g_module_symbol(),
+ * and later close the module with g_module_close().
+ * g_module_name() will return the file name of a currently opened module.
+ *
+ * If any of the above functions fail, the error status can be found with
+ * g_module_error().
+ *
+ * The #GModule implementation features reference counting for opened modules,
+ * and supports hook functions within a module which are called when the
+ * module is loaded and unloaded (see #GModuleCheckInit and #GModuleUnload).
+ *
+ * If your module introduces static data to common subsystems in the running
+ * program, e.g. through calling
+ * `g_quark_from_static_string ("my-module-stuff")`,
+ * it must ensure that it is never unloaded, by calling g_module_make_resident().
+ *
+ * Example: Calling a function defined in a GModule
+ * |[<!-- language="C" --> 
+ * // the function signature for 'say_hello'
+ * typedef void (* SayHelloFunc) (const char *message);
+ *
+ * gboolean
+ * just_say_hello (const char *filename, GError **error)
+ * {
+ *   SayHelloFunc  say_hello;
+ *   GModule      *module;
+ *
+ *   module = g_module_open (filename, G_MODULE_BIND_LAZY);
+ *   if (!module)
+ *     {
+ *       g_set_error (error, FOO_ERROR, FOO_ERROR_BLAH,
+ *                    "%s", g_module_error ());
+ *       return FALSE;
+ *     }
+ *
+ *   if (!g_module_symbol (module, "say_hello", (gpointer *)&say_hello))
+ *     {
+ *       g_set_error (error, SAY_ERROR, SAY_ERROR_OPEN,
+ *                    "%s: %s", filename, g_module_error ());
+ *       if (!g_module_close (module))
+ *         g_warning ("%s: %s", filename, g_module_error ());
+ *       return FALSE;
+ *     }
+ *
+ *   if (say_hello == NULL)
+ *     {
+ *       g_set_error (error, SAY_ERROR, SAY_ERROR_OPEN,
+ *                    "symbol say_hello is NULL");
+ *       if (!g_module_close (module))
+ *         g_warning ("%s: %s", filename, g_module_error ());
+ *       return FALSE;
+ *     }
+ *
+ *   // call our function in the module
+ *   say_hello ("Hello world!");
+ *
+ *   if (!g_module_close (module))
+ *     g_warning ("%s: %s", filename, g_module_error ());
+ *   return TRUE;
+ *  }
+ * ]|
+ */
+
+/**
+ * GModule:
+ *
+ * The #GModule struct is an opaque data structure to represent a
+ * [dynamically-loaded module][glib-Dynamic-Loading-of-Modules].
+ * It should only be accessed via the following functions.
+ */
+
+/**
+ * GModuleCheckInit:
+ * @module: the #GModule corresponding to the module which has just been loaded
+ *
+ * Specifies the type of the module initialization function.
+ * If a module contains a function named g_module_check_init() it is called
+ * automatically when the module is loaded. It is passed the #GModule structure
+ * and should return %NULL on success or a string describing the initialization
+ * error.
+ *
+ * Returns: %NULL on success, or a string describing the initialization error
+ */
+
+/**
+ * GModuleUnload:
+ * @module: the #GModule about to be unloaded
+ *
+ * Specifies the type of the module function called when it is unloaded.
+ * If a module contains a function named g_module_unload() it is called
+ * automatically when the module is unloaded.
+ * It is passed the #GModule structure.
+ */
+
+/**
+ * G_MODULE_SUFFIX:
+ *
+ * Expands to a shared library suffix for the current platform without the
+ * leading dot. On Unixes this is "so", and on Windows this is "dll".
+ *
+ * Deprecated: 2.76: Use g_module_open() instead with @module_name as the
+ * basename of the file_name argument. You will get the wrong results using
+ * this macro most of the time:
+ *
+ * 1. The suffix on macOS is usually 'dylib', but it's 'so' when using
+ *    Autotools, so there's no way to get the suffix correct using
+ *    a pre-processor macro.
+ * 2. Prefixes also vary in a platform-specific way. You may or may not have
+ *    a 'lib' prefix for the name on Windows and on Cygwin the prefix is
+ *    'cyg'.
+ * 3. The library name itself can vary per platform. For instance, you may
+ *    want to load foo-1.dll on Windows and libfoo.1.dylib on macOS.
+ *
+ * g_module_open() takes care of all this by searching the filesystem for
+ * combinations of possible suffixes and prefixes.
+ */
+
+/**
+ * G_MODULE_EXPORT:
+ *
+ * Used to declare functions exported by libraries or modules.
+ *
+ * When compiling for Windows, it marks the symbol as `dllexport`.
+ *
+ * When compiling for Linux and Unices, it marks the symbol as having `default`
+ * visibility. This is no-op unless the code is being compiled with a
+ * non-default
+ * [visibility flag](https://gcc.gnu.org/onlinedocs/gcc/Code-Gen-Options.html#index-fvisibility-1260)
+ * such as `hidden`.
+ *
+ * This macro must only be used when compiling a shared module. Modules that
+ * support both shared and static linking should define their own macro that
+ * expands to %G_MODULE_EXPORT when compiling the shared module, but is empty
+ * when compiling the static module on Windows.
+ */
+
+/**
+ * G_MODULE_IMPORT:
+ *
+ * Used to declare functions imported from modules.
+ */
+
 /* We maintain a list of modules, so we can reference count them.
- * That's needed because some platforms don't support refernce counts on
- * modules e.g. the shl_* implementation of HP-UX
- * (http://www.stat.umn.edu/~luke/xls/projects/dlbasics/dlbasics.html).
- * Also, the module for the program itself is kept seperatedly for
+ * That's needed because some platforms don't support references counts on
+ * modules. Also, the module for the program itself is kept separately for
  * faster access and because it has special semantics.
  */
 
@@ -61,9 +221,6 @@
 struct _GModule
 {
   gchar	*file_name;
-#if defined (G_OS_WIN32) && !defined(_WIN64)
-  gchar *cp_file_name;
-#endif
   gpointer handle;
   guint ref_count : 31;
   guint is_resident : 1;
@@ -73,16 +230,22 @@ struct _GModule
 
 
 /* --- prototypes --- */
-static gpointer		_g_module_open		(const gchar	*file_name,
-						 gboolean	 bind_lazy,
-						 gboolean	 bind_local);
-static void		_g_module_close		(gpointer	 handle,
-						 gboolean	 is_unref);
+static gpointer _g_module_open (const gchar  *file_name,
+                                gboolean      bind_lazy,
+                                gboolean      bind_local,
+                                GError      **error);
+static void		_g_module_close		(gpointer	 handle);
 static gpointer		_g_module_self		(void);
 static gpointer		_g_module_symbol	(gpointer	 handle,
 						 const gchar	*symbol_name);
+#if (G_MODULE_IMPL != G_MODULE_IMPL_DL) && (G_MODULE_IMPL != G_MODULE_IMPL_AR)
 static gchar*		_g_module_build_path	(const gchar	*directory,
 						 const gchar	*module_name);
+#else
+/* Implementation is in gmodule-deprecated.c */
+gchar*		        _g_module_build_path	(const gchar	*directory,
+						 const gchar	*module_name);
+#endif
 static inline void	g_module_set_error	(const gchar	*error);
 static inline GModule*	g_module_find_by_handle (gpointer	 handle);
 static inline GModule*	g_module_find_by_name	(const gchar	*name);
@@ -91,7 +254,7 @@ static inline GModule*	g_module_find_by_name	(const gchar	*name);
 /* --- variables --- */
 static GModule	     *modules = NULL;
 static GModule	     *main_module = NULL;
-static GStaticPrivate module_error_private = G_STATIC_PRIVATE_INIT;
+static GPrivate       module_error_private = G_PRIVATE_INIT (g_free);
 static gboolean	      module_debug_initialized = FALSE;
 static guint	      module_debug_flags = 0;
 
@@ -135,7 +298,7 @@ g_module_find_by_name (const gchar *name)
 static inline void
 g_module_set_error_unduped (gchar *error)
 {
-  g_static_private_set (&module_error_private, error, g_free);
+  g_private_replace (&module_error_private, error);
   errno = 0;
 }
 
@@ -146,16 +309,12 @@ g_module_set_error (const gchar *error)
 }
 
 
-/* --- include platform specifc code --- */
+/* --- include platform specific code --- */
 #define	SUPPORT_OR_RETURN(rv)	{ g_module_set_error (NULL); }
 #if	(G_MODULE_IMPL == G_MODULE_IMPL_DL)
 #include "gmodule-dl.c"
-#elif	(G_MODULE_IMPL == G_MODULE_IMPL_DLD)
-#include "gmodule-dld.c"
 #elif	(G_MODULE_IMPL == G_MODULE_IMPL_WIN32)
 #include "gmodule-win32.c"
-#elif	(G_MODULE_IMPL == G_MODULE_IMPL_DYLD)
-#include "gmodule-dyld.c"
 #elif	(G_MODULE_IMPL == G_MODULE_IMPL_AR)
 #include "gmodule-ar.c"
 #else
@@ -163,15 +322,16 @@ g_module_set_error (const gchar *error)
 #define	SUPPORT_OR_RETURN(rv)	{ g_module_set_error ("dynamic modules are " \
                                               "not supported by this system"); return rv; }
 static gpointer
-_g_module_open (const gchar	*file_name,
-		gboolean	 bind_lazy,
-		gboolean	 bind_local)
+_g_module_open (const gchar  *file_name,
+                gboolean      bind_lazy,
+                gboolean      bind_local,
+                GError      **error)
 {
+  g_module_set_error (NULL);
   return NULL;
 }
 static void
-_g_module_close	(gpointer	 handle,
-		 gboolean	 is_unref)
+_g_module_close (gpointer handle)
 {
 }
 static gpointer
@@ -193,7 +353,24 @@ _g_module_build_path (const gchar *directory,
 }
 #endif	/* no implementation */
 
+/**
+ * G_MODULE_ERROR:
+ *
+ * The error domain of the #GModule API.
+ *
+ * Since: 2.70
+ */
+G_DEFINE_QUARK (g-module-error-quark, g_module_error)
+
 /* --- functions --- */
+
+/**
+ * g_module_supported:
+ *
+ * Checks if modules are supported on the current platform.
+ *
+ * Returns: %TRUE if modules are supported
+ */
 gboolean
 g_module_supported (void)
 {
@@ -215,11 +392,11 @@ parse_libtool_archive (const gchar* libtool_name)
   GTokenType token;
   GScanner *scanner;
   
-  int fd = g_open (libtool_name, O_RDONLY, 0);
+  int fd = g_open (libtool_name, O_RDONLY | O_CLOEXEC, 0);
   if (fd < 0)
     {
       gchar *display_libtool_name = g_filename_display_name (libtool_name);
-      g_module_set_error_unduped (g_strdup_printf ("failed to open libtool archive \"%s\"", display_libtool_name));
+      g_module_set_error_unduped (g_strdup_printf ("failed to open libtool archive ‘%s’", display_libtool_name));
       g_free (display_libtool_name);
       return NULL;
     }
@@ -245,7 +422,7 @@ parse_libtool_archive (const gchar* libtool_name)
 	       G_TOKEN_IDENTIFIER : G_TOKEN_STRING))
 	    {
 	      gchar *display_libtool_name = g_filename_display_name (libtool_name);
-	      g_module_set_error_unduped (g_strdup_printf ("unable to parse libtool archive \"%s\"", display_libtool_name));
+	      g_module_set_error_unduped (g_strdup_printf ("unable to parse libtool archive ‘%s’", display_libtool_name));
 	      g_free (display_libtool_name);
 
 	      g_free (lt_dlname);
@@ -282,25 +459,24 @@ parse_libtool_archive (const gchar* libtool_name)
       g_free (dir);
     }
 
+  g_clear_pointer (&scanner, g_scanner_destroy);
+  close (g_steal_fd (&fd));
+
+  if (lt_libdir == NULL || lt_dlname == NULL)
+    {
+      gchar *display_libtool_name = g_filename_display_name (libtool_name);
+      g_module_set_error_unduped (g_strdup_printf ("unable to parse libtool archive ‘%s’", display_libtool_name));
+      g_free (display_libtool_name);
+
+      return NULL;
+    }
+
   name = g_strconcat (lt_libdir, G_DIR_SEPARATOR_S, lt_dlname, NULL);
   
   g_free (lt_dlname);
   g_free (lt_libdir);
-  g_scanner_destroy (scanner);
-  close (fd);
 
   return name;
-}
-
-static inline gboolean
-str_check_suffix (const gchar* string,
-		  const gchar* suffix)
-{
-  gsize string_len = strlen (string);    
-  gsize suffix_len = strlen (suffix);    
-
-  return string_len >= suffix_len && 
-    strcmp (string + string_len - suffix_len, suffix) == 0;
 }
 
 enum
@@ -326,19 +502,51 @@ _g_module_debug_init (void)
   module_debug_initialized = TRUE;
 }
 
-static GStaticRecMutex g_module_global_lock = G_STATIC_REC_MUTEX_INIT;
+static GRecMutex g_module_global_lock;
 
+/**
+ * g_module_open_full:
+ * @file_name: (nullable): the name or path to the file containing the module,
+ *     or %NULL to obtain a #GModule representing the main program itself
+ * @flags: the flags used for opening the module. This can be the
+ *     logical OR of any of the #GModuleFlags
+ * @error: #GError.
+ *
+ * Opens a module. If the module has already been opened, its reference count
+ * is incremented. If not, the module is searched in the following order:
+ *
+ * 1. If @file_name exists as a regular file, it is used as-is; else
+ * 2. If @file_name doesn't have the correct suffix and/or prefix for the
+ *    platform, then possible suffixes and prefixes will be added to the
+ *    basename till a file is found and whatever is found will be used; else
+ * 3. If @file_name doesn't have the ".la"-suffix, ".la" is appended. Either
+ *    way, if a matching .la file exists (and is a libtool archive) the
+ *    libtool archive is parsed to find the actual file name, and that is
+ *    used.
+ *
+ * At the end of all this, we would have a file path that we can access on
+ * disk, and it is opened as a module. If not, @file_name is opened as
+ * a module verbatim in the hopes that the system implementation will somehow
+ * be able to access it.
+ *
+ * Returns: a #GModule on success, or %NULL on failure
+ *
+ * Since: 2.70
+ */
 GModule*
-g_module_open (const gchar    *file_name,
-	       GModuleFlags    flags)
+g_module_open_full (const gchar   *file_name,
+                    GModuleFlags   flags,
+                    GError       **error)
 {
   GModule *module;
   gpointer handle = NULL;
   gchar *name = NULL;
   
   SUPPORT_OR_RETURN (NULL);
+
+  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
   
-  g_static_rec_mutex_lock (&g_module_global_lock);
+  g_rec_mutex_lock (&g_module_global_lock);
 
   if (G_UNLIKELY (!module_debug_initialized))
     _g_module_debug_init ();
@@ -351,13 +559,14 @@ g_module_open (const gchar    *file_name,
       if (!main_module)
 	{
 	  handle = _g_module_self ();
+/* On Android 64 bit, RTLD_DEFAULT is (void *)0x0
+ * so it always fails to create main_module if file_name is NULL */
+#if !defined(__BIONIC__) || !defined(__LP64__)
 	  if (handle)
+#endif
 	    {
 	      main_module = g_new (GModule, 1);
 	      main_module->file_name = NULL;
-#if defined (G_OS_WIN32) && !defined(_WIN64)
-	      main_module->cp_file_name = NULL;
-#endif
 	      main_module->handle = handle;
 	      main_module->ref_count = 1;
 	      main_module->is_resident = TRUE;
@@ -368,7 +577,7 @@ g_module_open (const gchar    *file_name,
       else
 	main_module->ref_count++;
 
-      g_static_rec_mutex_unlock (&g_module_global_lock);
+      g_rec_mutex_unlock (&g_module_global_lock);
       return main_module;
     }
   
@@ -378,7 +587,7 @@ g_module_open (const gchar    *file_name,
     {
       module->ref_count++;
       
-      g_static_rec_mutex_unlock (&g_module_global_lock);
+      g_rec_mutex_unlock (&g_module_global_lock);
       return module;
     }
 
@@ -388,12 +597,58 @@ g_module_open (const gchar    *file_name,
   /* try completing file name with standard library suffix */
   if (!name)
     {
-      name = g_strconcat (file_name, "." G_MODULE_SUFFIX, NULL);
-      if (!g_file_test (name, G_FILE_TEST_IS_REGULAR))
-	{
-	  g_free (name);
-	  name = NULL;
-	}
+      char *basename, *dirname;
+      size_t prefix_idx = 0, suffix_idx = 0;
+      const char *prefixes[2] = {0}, *suffixes[2] = {0};
+
+      basename = g_path_get_basename (file_name);
+      dirname = g_path_get_dirname (file_name);
+#ifdef G_OS_WIN32
+      if (!g_str_has_prefix (basename, "lib"))
+        prefixes[prefix_idx++] = "lib";
+      prefixes[prefix_idx++] = "";
+      if (!g_str_has_suffix (basename, ".dll"))
+        suffixes[suffix_idx++] = ".dll";
+#else
+  #ifdef __CYGWIN__
+      if (!g_str_has_prefix (basename, "cyg"))
+        prefixes[prefix_idx++] = "cyg";
+  #else
+      if (!g_str_has_prefix (basename, "lib"))
+        prefixes[prefix_idx++] = "lib";
+      else
+        /* People commonly pass `libfoo` as the file_name and want us to
+         * auto-detect the suffix as .la or .so, etc. We need to also find
+         * .dylib and .dll in those cases. */
+        prefixes[prefix_idx++] = "";
+  #endif
+  #ifdef __APPLE__
+      if (!g_str_has_suffix (basename, ".dylib") &&
+          !g_str_has_suffix (basename, ".so"))
+        {
+          suffixes[suffix_idx++] = ".dylib";
+          suffixes[suffix_idx++] = ".so";
+        }
+  #else
+      if (!g_str_has_suffix (basename, ".so"))
+        suffixes[suffix_idx++] = ".so";
+  #endif
+#endif
+      for (guint i = 0; i < prefix_idx; i++)
+        {
+          for (guint j = 0; j < suffix_idx; j++)
+            {
+              name = g_strconcat (dirname, G_DIR_SEPARATOR_S, prefixes[i],
+                                  basename, suffixes[j], NULL);
+              if (g_file_test (name, G_FILE_TEST_IS_REGULAR))
+                goto name_found;
+              g_free (name);
+              name = NULL;
+            }
+        }
+    name_found:
+      g_free (basename);
+      g_free (dirname);
     }
   /* try completing by appending libtool suffix */
   if (!name)
@@ -412,8 +667,9 @@ g_module_open (const gchar    *file_name,
     {
       gchar *dot = strrchr (file_name, '.');
       gchar *slash = strrchr (file_name, G_DIR_SEPARATOR);
-      
-      /* make sure the name has a suffix */
+
+      /* we make sure the name has a suffix using the deprecated
+       * G_MODULE_SUFFIX for backward-compat */
       if (!dot || dot < slash)
 	name = g_strconcat (file_name, "." G_MODULE_SUFFIX, NULL);
       else
@@ -421,30 +677,23 @@ g_module_open (const gchar    *file_name,
     }
 
   /* ok, try loading the module */
-  if (name)
-    {
-      /* if it's a libtool archive, figure library file to load */
-      if (str_check_suffix (name, ".la")) /* libtool archive? */
-	{
-	  gchar *real_name = parse_libtool_archive (name);
+  g_assert (name != NULL);
 
-	  /* real_name might be NULL, but then module error is already set */
-	  if (real_name)
-	    {
-	      g_free (name);
-	      name = real_name;
-            }
-	}
-      if (name)
-	handle = _g_module_open (name, (flags & G_MODULE_BIND_LAZY) != 0,
-			(flags & G_MODULE_BIND_LOCAL) != 0);
-    }
-  else
+  /* if it's a libtool archive, figure library file to load */
+  if (g_str_has_suffix (name, ".la")) /* libtool archive? */
     {
-      gchar *display_file_name = g_filename_display_name (file_name);
-      g_module_set_error_unduped (g_strdup_printf ("unable to access file \"%s\"", display_file_name));
-      g_free (display_file_name);
+      gchar *real_name = parse_libtool_archive (name);
+
+      /* real_name might be NULL, but then module error is already set */
+      if (real_name)
+        {
+          g_free (name);
+          name = real_name;
+        }
     }
+
+  handle = _g_module_open (name, (flags & G_MODULE_BIND_LAZY) != 0,
+                           (flags & G_MODULE_BIND_LOCAL) != 0, error);
   g_free (name);
 
   if (handle)
@@ -457,11 +706,11 @@ g_module_open (const gchar    *file_name,
       module = g_module_find_by_handle (handle);
       if (module)
 	{
-	  _g_module_close (module->handle, TRUE);
+	  _g_module_close (module->handle);
 	  module->ref_count++;
 	  g_module_set_error (NULL);
 	  
-	  g_static_rec_mutex_unlock (&g_module_global_lock);
+	  g_rec_mutex_unlock (&g_module_global_lock);
 	  return module;
 	}
       
@@ -470,10 +719,6 @@ g_module_open (const gchar    *file_name,
       
       module = g_new (GModule, 1);
       module->file_name = g_strdup (file_name);
-#if defined (G_OS_WIN32) && !defined(_WIN64)
-      module->cp_file_name = g_locale_from_utf8 (file_name, -1,
-						 NULL, NULL, NULL);
-#endif
       module->handle = handle;
       module->ref_count = 1;
       module->is_resident = FALSE;
@@ -491,16 +736,16 @@ g_module_open (const gchar    *file_name,
       
       if (check_failed)
 	{
-	  gchar *error;
+	  gchar *temp_error;
 
-	  error = g_strconcat ("GModule (", 
-                               file_name ? file_name : "NULL", 
-                               ") initialization check failed: ", 
-                               check_failed, NULL);
+          temp_error = g_strconcat ("GModule (", file_name, ") ",
+                                    "initialization check failed: ",
+                                    check_failed, NULL);
 	  g_module_close (module);
 	  module = NULL;
-	  g_module_set_error (error);
-	  g_free (error);
+          g_module_set_error (temp_error);
+          g_set_error_literal (error, G_MODULE_ERROR, G_MODULE_ERROR_CHECK_FAILED, temp_error);
+          g_free (temp_error);
 	}
       else
 	g_module_set_error (saved_error);
@@ -512,37 +757,45 @@ g_module_open (const gchar    *file_name,
       (module_debug_flags & G_MODULE_DEBUG_RESIDENT_MODULES))
     g_module_make_resident (module);
 
-  g_static_rec_mutex_unlock (&g_module_global_lock);
+  g_rec_mutex_unlock (&g_module_global_lock);
   return module;
 }
 
-#if defined (G_OS_WIN32) && !defined(_WIN64)
-
-#undef g_module_open
-
-GModule*
-g_module_open (const gchar    *file_name,
-	       GModuleFlags    flags)
+/**
+ * g_module_open:
+ * @file_name: (nullable): the name or path to the file containing the module,
+ *     or %NULL to obtain a #GModule representing the main program itself
+ * @flags: the flags used for opening the module. This can be the
+ *     logical OR of any of the #GModuleFlags.
+ *
+ * A thin wrapper function around g_module_open_full()
+ *
+ * Returns: a #GModule on success, or %NULL on failure
+ */
+GModule *
+g_module_open (const gchar  *file_name,
+               GModuleFlags  flags)
 {
-  gchar *utf8_file_name = g_locale_to_utf8 (file_name, -1, NULL, NULL, NULL);
-  GModule *retval = g_module_open_utf8 (utf8_file_name, flags);
-
-  g_free (utf8_file_name);
-
-  return retval;
+  return g_module_open_full (file_name, flags, NULL);
 }
 
-#endif
-
+/**
+ * g_module_close:
+ * @module: a #GModule to close
+ *
+ * Closes a module.
+ *
+ * Returns: %TRUE on success
+ */
 gboolean
-g_module_close (GModule	       *module)
+g_module_close (GModule *module)
 {
   SUPPORT_OR_RETURN (FALSE);
   
   g_return_val_if_fail (module != NULL, FALSE);
   g_return_val_if_fail (module->ref_count > 0, FALSE);
   
-  g_static_rec_mutex_lock (&g_module_global_lock);
+  g_rec_mutex_lock (&g_module_global_lock);
 
   module->ref_count--;
   
@@ -578,18 +831,22 @@ g_module_close (GModule	       *module)
 	}
       module->next = NULL;
       
-      _g_module_close (module->handle, FALSE);
+      _g_module_close (module->handle);
       g_free (module->file_name);
-#if defined (G_OS_WIN32) && !defined(_WIN64)
-      g_free (module->cp_file_name);
-#endif
       g_free (module);
     }
   
-  g_static_rec_mutex_unlock (&g_module_global_lock);
+  g_rec_mutex_unlock (&g_module_global_lock);
   return g_module_error() == NULL;
 }
 
+/**
+ * g_module_make_resident:
+ * @module: a #GModule to make permanently resident
+ *
+ * Ensures that a module will never be unloaded.
+ * Any future g_module_close() calls on the module will be ignored.
+ */
 void
 g_module_make_resident (GModule *module)
 {
@@ -598,16 +855,34 @@ g_module_make_resident (GModule *module)
   module->is_resident = TRUE;
 }
 
-G_CONST_RETURN gchar*
+/**
+ * g_module_error:
+ *
+ * Gets a string describing the last module error.
+ *
+ * Returns: a string describing the last module error
+ */
+const gchar *
 g_module_error (void)
 {
-  return g_static_private_get (&module_error_private);
+  return g_private_get (&module_error_private);
 }
 
+/**
+ * g_module_symbol:
+ * @module: a #GModule
+ * @symbol_name: the name of the symbol to find
+ * @symbol: (out): returns the pointer to the symbol value
+ *
+ * Gets a symbol pointer from a module, such as one exported
+ * by %G_MODULE_EXPORT. Note that a valid symbol can be %NULL.
+ *
+ * Returns: %TRUE on success
+ */
 gboolean
-g_module_symbol (GModule	*module,
-		 const gchar	*symbol_name,
-		 gpointer	*symbol)
+g_module_symbol (GModule     *module,
+                 const gchar *symbol_name,
+                 gpointer    *symbol)
 {
   const gchar *module_error;
 
@@ -619,7 +894,7 @@ g_module_symbol (GModule	*module,
   g_return_val_if_fail (symbol_name != NULL, FALSE);
   g_return_val_if_fail (symbol != NULL, FALSE);
   
-  g_static_rec_mutex_lock (&g_module_global_lock);
+  g_rec_mutex_lock (&g_module_global_lock);
 
 #ifdef	G_MODULE_NEED_USCORE
   {
@@ -638,17 +913,27 @@ g_module_symbol (GModule	*module,
     {
       gchar *error;
 
-      error = g_strconcat ("`", symbol_name, "': ", module_error, NULL);
+      error = g_strconcat ("'", symbol_name, "': ", module_error, NULL);
       g_module_set_error (error);
       g_free (error);
       *symbol = NULL;
     }
   
-  g_static_rec_mutex_unlock (&g_module_global_lock);
+  g_rec_mutex_unlock (&g_module_global_lock);
   return !module_error;
 }
 
-G_CONST_RETURN gchar*
+/**
+ * g_module_name:
+ * @module: a #GModule
+ *
+ * Returns the filename that the module was opened with.
+ *
+ * If @module refers to the application itself, "main" is returned.
+ *
+ * Returns: (transfer none): the filename of the module
+ */
+const gchar *
 g_module_name (GModule *module)
 {
   g_return_val_if_fail (module != NULL, NULL);
@@ -659,28 +944,63 @@ g_module_name (GModule *module)
   return module->file_name;
 }
 
-#if defined (G_OS_WIN32) && !defined(_WIN64)
-
-#undef g_module_name
-
-G_CONST_RETURN gchar*
-g_module_name (GModule *module)
-{
-  g_return_val_if_fail (module != NULL, NULL);
-  
-  if (module == main_module)
-    return "main";
-  
-  return module->cp_file_name;
-}
-
-#endif
-
-gchar*
+/**
+ * g_module_build_path:
+ * @directory: (nullable): the directory where the module is. This can be
+ *     %NULL or the empty string to indicate that the standard platform-specific
+ *     directories will be used, though that is not recommended
+ * @module_name: the name of the module
+ *
+ * A portable way to build the filename of a module. The platform-specific
+ * prefix and suffix are added to the filename, if needed, and the result
+ * is added to the directory, using the correct separator character.
+ *
+ * The directory should specify the directory where the module can be found.
+ * It can be %NULL or an empty string to indicate that the module is in a
+ * standard platform-specific directory, though this is not recommended
+ * since the wrong module may be found.
+ *
+ * For example, calling g_module_build_path() on a Linux system with a
+ * @directory of `/lib` and a @module_name of "mylibrary" will return
+ * `/lib/libmylibrary.so`. On a Windows system, using `\Windows` as the
+ * directory it will return `\Windows\mylibrary.dll`.
+ *
+ * Returns: the complete path of the module, including the standard library
+ *     prefix and suffix. This should be freed when no longer needed
+ *
+ * Deprecated: 2.76: Use g_module_open() instead with @module_name as the
+ * basename of the file_name argument. See %G_MODULE_SUFFIX for why.
+ */
+gchar *
 g_module_build_path (const gchar *directory,
-		     const gchar *module_name)
+                     const gchar *module_name)
 {
   g_return_val_if_fail (module_name != NULL, NULL);
   
   return _g_module_build_path (directory, module_name);
 }
+
+
+#ifdef G_OS_WIN32
+
+/* Binary compatibility versions. Not for newly compiled code. */
+
+_GMODULE_EXTERN GModule *    g_module_open_utf8 (const gchar  *file_name,
+                                                 GModuleFlags  flags);
+
+_GMODULE_EXTERN const gchar *g_module_name_utf8 (GModule      *module);
+
+GModule*
+g_module_open_utf8 (const gchar    *file_name,
+                    GModuleFlags    flags)
+{
+  return g_module_open (file_name, flags);
+}
+
+const gchar *
+g_module_name_utf8 (GModule *module)
+{
+  return g_module_name (module);
+}
+
+#endif
