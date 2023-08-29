@@ -757,7 +757,6 @@ g_ascii_strtod (const gchar *nptr,
 
 #ifndef __BIONIC__
   locale_data = localeconv ();
-
   decimal_point = locale_data->decimal_point;
   decimal_point_len = strlen (decimal_point);
 #else
@@ -880,7 +879,6 @@ g_ascii_strtod (const gchar *nptr,
       g_free (copy);
     }
   else
-#endif
     {
       errno = 0;
       val = strtod (nptr, &fail_pos);
@@ -895,6 +893,7 @@ g_ascii_strtod (const gchar *nptr,
   return val;
 #endif
 }
+
 
 /**
  * g_ascii_dtostr:
