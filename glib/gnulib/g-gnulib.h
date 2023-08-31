@@ -18,7 +18,7 @@
 
 #include "config.h"
 #include <stdlib.h>
-#include "glib/glib.h"
+#include <glib.h>
 
 /* Private namespace for gnulib functions */
 #define asnprintf        _g_gnulib_asnprintf

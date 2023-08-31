@@ -105,7 +105,6 @@
 #ifdef HAVE_CODESET
 #include <langinfo.h>
 #endif
-#endif
 
 /**
  * g_memmove: 
