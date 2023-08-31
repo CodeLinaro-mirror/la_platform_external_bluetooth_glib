@@ -39,18 +39,23 @@ GLIB_AVAILABLE_IN_ALL
 const gchar *g_strip_context (const gchar *msgid,
                               const gchar *msgval) G_GNUC_FORMAT(1);
 
-GLIB_AVAILABLE_IN_ALL
-const gchar *g_dgettext      (const gchar *domain,
-                              const gchar *msgid) G_GNUC_FORMAT(2);
+// GLIB_AVAILABLE_IN_ALL
+// const gchar *g_dgettext      (const gchar *domain,
+//                               const gchar *msgid) G_GNUC_FORMAT(2);
+#define g_dgettext(d, msgid) (msgid)
+
 GLIB_AVAILABLE_IN_ALL
 const gchar *g_dcgettext     (const gchar *domain,
                               const gchar *msgid,
                               gint         category) G_GNUC_FORMAT(2);
-GLIB_AVAILABLE_IN_ALL
-const gchar *g_dngettext     (const gchar *domain,
-                              const gchar *msgid,
-                              const gchar *msgid_plural,
-                              gulong       n) G_GNUC_FORMAT(3);
+// GLIB_AVAILABLE_IN_ALL
+// const gchar *g_dngettext     (const gchar *domain,
+//                               const gchar *msgid,
+//                               const gchar *msgid_plural,
+//                               gulong       n) G_GNUC_FORMAT(3);
+
+// Hack to make it work without gettext.
+#define g_dngettext(d, msgid, msgid_plural, n) ((n) == 1 ? (msgid) : (msgid_plural))
 GLIB_AVAILABLE_IN_ALL
 const gchar *g_dpgettext     (const gchar *domain,
                               const gchar *msgctxtid,
