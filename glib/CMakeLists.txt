@@ -1,9 +1,11 @@
 # darwin-aarch64 PUBLIC os/darwin/aarch64) android_target_link_libraries( glib2
 # darwin-x86_64 PUBLIC "-framework CoreFoundation" "-framework AppKit")
 
-# Let's add in the library
+# Let's add in the library, we are appending the binary type, as we will ship
+# multiple versions on m1.
+message(STATUS "Building glib2 for ${ANDROID_TARGET_TAG}")
 android_add_library(
-  TARGET glib2
+  TARGET glib2_${ANDROID_TARGET_TAG}
   SHARED
   LIBNAME
     glib-2.0
@@ -120,7 +122,7 @@ android_add_library(
   LINUX gjournal-private.c)
 
 target_compile_options(
-  glib2
+  glib2_${ANDROID_TARGET_TAG}
   PRIVATE -fvisibility=hidden
           -Winvalid-pch
           -Wextra
@@ -151,11 +153,12 @@ target_compile_options(
           -Wno-string-plus-int)
 
 target_compile_definitions(
-  glib2 PRIVATE GLIB_COMPILATION _GNU_SOURCE G_DISABLE_CAST_CHECKS
-                GLIB_CHARSETALIAS_DIR="")
+  glib2_${ANDROID_TARGET_TAG}
+  PRIVATE GLIB_COMPILATION _GNU_SOURCE G_DISABLE_CAST_CHECKS
+          GLIB_CHARSETALIAS_DIR="")
 
 android_target_include_directories(
-  glib2
+  glib2_${ANDROID_TARGET_TAG}
   linux
   PUBLIC
   ../os/linux/glib
@@ -164,18 +167,19 @@ android_target_include_directories(
   ..)
 
 android_target_include_directories(
-  glib2
+  glib2_${ANDROID_TARGET_TAG}
   darwin
   PUBLIC
   ../os/darwin/glib
   ../glib
   ../os/darwin
   ..)
-android_target_link_libraries(glib2 darwin PUBLIC "-framework CoreFoundation"
-                                                  "-framework AppKit" iconv c)
+android_target_link_libraries(
+  glib2_${ANDROID_TARGET_TAG} darwin PUBLIC "-framework CoreFoundation"
+                                          "-framework AppKit" iconv c)
 
 android_target_include_directories(
-  glib2
+  glib2_${ANDROID_TARGET_TAG}
   windows
   PUBLIC
   ../os/windows/glib
@@ -183,7 +187,19 @@ android_target_include_directories(
   ../os/windows
   ..)
 android_target_compile_definitions(
-  glib2 windows PRIVATE UNICODE _UNICODE HAVE_ISNAN_IN_LIBC HAVE_ISNAND_IN_LIBC
-                        HAVE_ISNANF_IN_LIBC HAVE_ISNANL_IN_LIBC)
-android_target_link_libraries(glib2 windows PUBLIC ws2_32::ws2_32)
-android_install_shared(glib2)
+  glib2_${ANDROID_TARGET_TAG} windows
+  PRIVATE UNICODE _UNICODE HAVE_ISNAN_IN_LIBC HAVE_ISNAND_IN_LIBC
+          HAVE_ISNANF_IN_LIBC HAVE_ISNANL_IN_LIBC)
+android_target_link_libraries(glib2_${ANDROID_TARGET_TAG} windows
+                              PUBLIC ws2_32::ws2_32)
+android_install_shared(glib2_${ANDROID_TARGET_TAG})
+
+add_library(glib2 ALIAS glib2_${ANDROID_TARGET_TAG})
+android_license(
+  TARGET "glib2"
+  LIBNAME glib-2.0
+  URL "https://android.googlesource.com/platform/external/bluetooth/glib/+/refs/heads/emu-master-dev/"
+  SPDX "LGPL-2.1-only"
+  LICENSE
+    "https://android.googlesource.com/platform/external/bluetooth/glib/+/refs/heads/emu-master-dev/COPYING"
+  LOCAL "${ANDROID_QEMU2_TOP_DIR}/LICENSES/LICENSE.LGPLv21")
