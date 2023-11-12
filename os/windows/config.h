@@ -177,7 +177,7 @@
 
 #define _WIN32_WINNT 0x0601
 
-#define gl_extern_inline
+#define gl_extern_inline 
 /* Please see the Gnulib manual for how to use these macros.
 
    Suppress extern inline with HP-UX cc, as it appears to be broken; see
@@ -271,7 +271,7 @@
 #endif
 
 
-#define gl_unused
+#define gl_unused 
 /* Define as a marker that can be attached to declarations that might not
     be used.  This helps to reduce warnings, such as from
     GCC -Wunused-parameter.  */
