@@ -1,3 +1,5 @@
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+
 objc_library(
     name = "glib-darwin",
     srcs = [
@@ -13,22 +15,75 @@ objc_library(
         "-I $(execpath os/darwin)",
         "-I $(execpath os/darwin/glib)",
         "-I $(execpath glib)",
+        "-I $(execpath .)",
     ],
     data = [
         # These paths are here so we can use them in copts with $(execpath ...)
         "os/darwin",
         "os/darwin/glib",
         "glib",
+        ".",
     ],
     includes = [
         ".",
     ],
 )
 
+py_binary(
+    name = "gen-visibility-macros",
+    srcs = ["tools/gen-visibility-macros.py"],
+)
+
+run_binary(
+    name = "gen_visibility_macros",
+    outs = ["gmodule/gmodule-visibility.h"],
+    args = [
+        "2.77.2",
+        "visibility-macros",
+        "GMODULE",
+        "$(location gmodule/gmodule-visibility.h)",
+    ],
+    tool = ":gen-visibility-macros",
+)
+
+cc_library(
+    name = "gnulib",
+    srcs = [
+        "glib/gnulib/asnprintf.c",
+        "glib/gnulib/isnan.c",
+        "glib/gnulib/printf.c",
+        "glib/gnulib/printf-args.c",
+        "glib/gnulib/printf-frexp.c",
+        "glib/gnulib/printf-frexpl.c",
+        "glib/gnulib/printf-parse.c",
+        # "glib/gnulib/vasnprintf.c",
+        "glib/gnulib/xsize.c",
+    ] + glob([
+        "glib/gnulib/*.h",
+        "glib/*.h",
+        "glib/deprecated/*.h",
+    ]),
+    hdrs = [
+        "glib.h",
+        "glib/gnulib/g-gnulib.h",
+        "glib/gnulib/printf-frexp.c",
+        "os/windows/config.h",
+        "os/windows/glib/glibconfig.h",
+        "os/windows/glib/gnulib/gnulib_math.h",
+    ],
+    includes = [
+        "os/windows",
+        "os/windows/glib",
+        "os/windows/glib/gnulib",
+    ],
+)
+
+# Note we merge gmodule inside this.
 cc_library(
     # Named "glib2" so it doesn't shadow the "glib" directory in this package.
-    name = "glib2",
+    name = "glib-2.0",
     srcs = [
+        "gmodule/gmodule.c",
         "glib/garcbox.c",
         "glib/garray.c",
         "glib/gasyncqueue.c",
@@ -78,7 +133,7 @@ cc_library(
         "glib/grcbox.c",
         "glib/grefcount.c",
         "glib/grefstring.c",
-        # "gregex.c",
+        "glib/gregex.c",
         "glib/gscanner.c",
         "glib/gsequence.c",
         "glib/gshell.c",
@@ -114,6 +169,7 @@ cc_library(
         "glib/gversion.c",
         "glib/gwakeup.c",
         "glib/libcharset/localcharset.c",
+        "gmodule/gmodule.h",
     ] + select({
         "@platforms//os:macos": [
             "glib/giounix.c",
@@ -123,11 +179,35 @@ cc_library(
             "glib/gthread-posix.c",
             "os/darwin/config.h",
             "os/darwin/glib/glibconfig.h",
+            "os/darwin/gmodule/gmoduleconf.h",
+        ],
+        "@platforms//os:windows": [
+            "glib/dirent/dirent.h",
+            "glib/dirent/wdirent.c",
+            "glib/giowin32.c",
+            "glib/gspawn-win32.c",
+            "glib/gthread-win32.c",
+            "glib/gwin32.c",
+            "os/windows/config.h",
+            "os/windows/glib/glibconfig.h",
+            "os/windows/gmodule/gmoduleconf.h",
+        ],
+        "@platforms//os:linux": [
+            "glib/giounix.c",
+            "glib/gjournal-private.c",
+            "glib/glib-unix.c",
+            "glib/glib-unixprivate.h",
+            "glib/gspawn.c",
+            "glib/gthread-posix.c",
+            "os/linux/config.h",
+            "os/linux/glib/glibconfig.h",
+            "os/linux/gmodule/gmoduleconf.h",
         ],
         "//conditions:default": [],
     }) + glob(
         [
             "glib/*.h",
+            "glib/gnulib/*.h",
             "glib/deprecated/*.h",
             "glib/libcharset/*.h",
         ],
@@ -137,13 +217,22 @@ cc_library(
     ),
     hdrs = [
         "glib.h",
-    ],
+        "gmodule/gmodule-dl.c",  # TODO: this technically leaks out.
+        "gmodule/gmodule-visibility.h",
+    ] + select({
+        "@platforms//os:windows": [
+            "glib/dirent/dirent.c",
+            "glib/gstdio-private.c",
+            "glib/gwin32-private.c",
+            "glib/win_iconv.c",
+            "gmodule/gmodule-win32.c",
+        ],
+        "//conditions:default": [],
+    }),
     copts = [
-        "-fvisibility=hidden",
         "-Winvalid-pch",
         "-Wextra",
         "-Wpedantic",
-        "-std=gnu99",
         "-fno-strict-aliasing",
         "-Wimplicit-fallthrough",
         "-Wmisleading-indentation",
@@ -168,24 +257,58 @@ cc_library(
         "-Werror=pointer-sign",
         "-Wno-string-plus-int",
     ] + select({
+        # Needed for using <glib/xxx> vs "glib/xxxx"
         "@platforms//os:macos": [
+            "-fvisibility=hidden",
+            "-std=gnu99",
             "-I $(execpath os/darwin)",
             "-I $(execpath os/darwin/glib)",
+            "-I $(execpath os/darwin/gmodule)",
             "-I $(execpath glib)",
+            "-I $(execpath .)",
+        ],
+        "@platforms//os:windows": [
+            "-Wno-inconsistent-dllimport",
+            "-Wno-implicit-fallthrough",
+            "-Wno-unused-function",
+            "-Wno-#pragma-messages",
+        ],
+        "@platforms//os:linux": [
+            "-fvisibility=hidden",
+            "-std=gnu99",
         ],
         "//conditions:default": [],
     }),
-    data = select({
+    data = [
+        # These paths are here so we can use them in copts with $(execpath ...)
+        "os/darwin",
+        "os/darwin/glib",
+        "os/darwin/gmodule",
+        "os/windows/gmodule",
+        "glib",
+        ".",
+    ],
+    includes = select({
         "@platforms//os:macos": [
-            # These paths are here so we can use them in copts with $(execpath ...)
             "os/darwin",
             "os/darwin/glib",
-            "glib",
+            "os/darwin/gmodule",
+        ],
+        "@platforms//os:linux": [
+            "os/linux",
+            "os/linux/glib",
+            "os/linux/gmodule",
+        ],
+        "@platforms//os:windows": [
+            "os/windows",
+            "os/windows/glib",
+            "os/windows/gmodule",
         ],
         "//conditions:default": [],
-    }),
-    includes = [
+    }) + [
         ".",
+        "glib",
+        "gmodule",
     ],
     local_defines = [
         "GLIB_COMPILATION",
@@ -195,6 +318,7 @@ cc_library(
     ],
     deps = select({
         "@platforms//os:macos": [":glib-darwin"],
+        "@platforms//os:windows": [":gnulib"],
         "//conditions:default": [],
-    }),
+    }) + ["@pcre2"],
 )
