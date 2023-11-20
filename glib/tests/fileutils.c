@@ -2114,7 +2114,7 @@ test_fopen_modes (void)
 }
 
 #ifdef G_OS_WIN32
-#include "../gstdio-private.c"
+#include "../gstdio-private.h"
 
 static int
 g_wcscmp0 (const gunichar2 *str1,

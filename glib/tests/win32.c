@@ -30,7 +30,7 @@
 
 static char *argv0 = NULL;
 
-#include "../gwin32-private.c"
+#include "../gwin32-private.h"
 
 static void
 test_subst_pid_and_event (void)

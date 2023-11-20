@@ -142,7 +142,7 @@
 #  define DCHAR_CPY wmemcpy
 #  define DCHAR_SET wmemset
 # else
-#  define VASNPRINTF vasnprintf
+#  define VASNPRINTF _g_gnulib_vasnprintf
 #  define FCHAR_T char
 #  define DCHAR_T char
 #  define TCHAR_T char
@@ -1785,7 +1785,7 @@ MAX_ROOM_NEEDED (const arguments *ap, size_t arg_index, FCHAR_T conversion,
 #endif
 
 DCHAR_T *
-VASNPRINTF (DCHAR_T *resultbuf, size_t *lengthp,
+_g_gnulib_vasnprintf (DCHAR_T *resultbuf, size_t *lengthp,
             const FCHAR_T *format, va_list args)
 {
   DIRECTIVES d;
