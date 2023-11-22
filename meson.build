@@ -2074,7 +2074,7 @@ glibconfig_conf.set10('G_HAVE_GROWING_STACK', growing_stack)
 # available in the actual runtime environment. On Windows, we always use
 # the built-in implementation
 if host_system == 'windows'
-  # We have a #include "win_iconv.c" in gconvert.c on Windows, so we don't need
+  # We have a #include "win_iconv.h" in gconvert.c on Windows, so we don't need
   # any external library for it
   libiconv = []
 else

@@ -1068,7 +1068,7 @@ static DWORD       *exceptions_to_catch = NULL;
 static HANDLE       debugger_wakeup_event = 0;
 static DWORD        debugger_spawn_flags = 0;
 
-#include "gwin32-private.c"
+#include "gwin32-private.h"
 
 static char *
 copy_chars (char       *buffer,

@@ -140,7 +140,7 @@ w32_error_to_errno (DWORD error_code)
     }
 }
 
-#include "gstdio-private.c"
+#include "gstdio-private.h"
 
 /* Windows implementation of fopen() does not accept modes such as
  * "wb+". The 'b' needs to be appended to "w+", i.e. "w+b". Note

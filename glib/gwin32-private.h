@@ -1,4 +1,4 @@
-/* gwin32-private.c - private glib functions for gwin32.c
+/* gwin32-private.h - private glib functions for gwin32.c
  *
  * Copyright 2019 Руслан Ижбулатов
  *
