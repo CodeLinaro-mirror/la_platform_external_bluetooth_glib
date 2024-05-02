@@ -80,7 +80,6 @@ cc_library(
     deps = [":glib-static"],
 )
 
-
 cc_library(
     name = "gmodule-shared",
     srcs = [
@@ -114,6 +113,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [":glib-static"],
 )
+
 # This is a windows only library that providing common gnu based printing
 cc_library(
     name = "gnulib",
@@ -174,6 +174,8 @@ cc_library(
         "UNICODE",
         "_UNICODE",
     ],
+    includes = ["glib/dirent"],
+    visibility = ["//visibility:public"],
 )
 
 glib_sourceset = [
