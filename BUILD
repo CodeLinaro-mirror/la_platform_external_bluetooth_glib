@@ -68,7 +68,7 @@ cc_library(
         "-Wno-implicit-function-declaration",
     ],
     defines = [
-        "GLIB_STATIC_COMPILATION",
+        "GMODULE_STATIC_COMPILATION",
     ],
     includes = ["glib"] + common_os_includes(),
     local_defines = [
