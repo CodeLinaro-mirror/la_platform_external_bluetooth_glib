@@ -377,13 +377,16 @@ cc_library(
         "glib",
         "gmodule",
     ] + common_os_includes(),
-    linkopts = [
-        "-DEFAULTLIB:ws2_32.lib",
-        "-DEFAULTLIB:User32.lib",
-        "-DEFAULTLIB:Shell32.lib",
-        "-DEFAULTLIB:Ole32.lib",
-        "-DEFAULTLIB:Advapi32.lib",
-    ],
+    linkopts = select({
+        "@platforms//os:windows": [
+            "-DEFAULTLIB:ws2_32.lib",
+            "-DEFAULTLIB:User32.lib",
+            "-DEFAULTLIB:Shell32.lib",
+            "-DEFAULTLIB:Ole32.lib",
+            "-DEFAULTLIB:Advapi32.lib",
+        ],
+        "//conditions:default": ["-pthread"],
+    }),
     local_defines = [
         "GLIB_COMPILATION",
         "_GNU_SOURCE",
