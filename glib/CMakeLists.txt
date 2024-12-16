@@ -223,7 +223,7 @@ android_target_compile_options(
 
 android_target_link_libraries(glib2_${ANDROID_TARGET_TAG} windows PUBLIC
                               ws2_32::ws2_32)
-android_install_shared(glib2_${ANDROID_TARGET_TAG})
+android_install_shared_library(TARGET glib2_${ANDROID_TARGET_TAG})
 
 add_library(glib2 ALIAS glib2_${ANDROID_TARGET_TAG})
 android_license(
