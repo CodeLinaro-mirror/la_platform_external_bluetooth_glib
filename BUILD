@@ -1,5 +1,7 @@
-load(":common_headers.bzl", "common_os_headers", "common_os_includes", "generate_test_rules")
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_cc//cc:defs.bzl", "cc_library", "objc_library")
+load("@rules_python//python:defs.bzl", "py_binary")
+load(":common_headers.bzl", "common_os_headers", "common_os_includes", "generate_test_rules")
 
 objc_library(
     name = "glib-darwin",
