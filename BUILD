@@ -73,6 +73,7 @@ cc_library(
         "GMODULE_STATIC_COMPILATION",
     ],
     includes = ["glib"] + common_os_includes(),
+    linkstatic = 1,
     local_defines = [
         "_GNU_SOURCE",
         "G_DISABLE_CAST_CHECKS",
