@@ -389,6 +389,7 @@ cc_library(
         ],
         "//conditions:default": ["-pthread"],
     }),
+    linkstatic = True,
     local_defines = [
         "GLIB_COMPILATION",
         "_GNU_SOURCE",
